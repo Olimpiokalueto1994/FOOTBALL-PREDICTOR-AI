@@ -54,6 +54,18 @@ export const AdminControlView: React.FC<AdminControlViewProps> = () => {
       </div>
 
       {/* System Status Banner */}
+      {status?.isSyntheticData && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 space-y-1">
+          <div className="flex items-center space-x-2 text-amber-400 font-bold text-xs">
+            <span className="rounded bg-amber-500/20 px-2 py-0.5">[MODO DEMONSTRAÇÃO / DADOS SINTÉTICOS]</span>
+            <span>Ambiente de Validação e Calibração Algorítmica</span>
+          </div>
+          <p className="text-[#8D98A8] text-xs font-sans mt-1">
+            O sistema está utilizando dados sintéticos estruturados para execução e teste dos modelos Poisson, Elo e Ensemble. Para ingestão de dados reais de campeonatos em tempo real, configure a variável de ambiente <code className="text-[#F5F7FA] bg-[#151C28] px-1 py-0.5 rounded">API_FOOTBALL_KEY</code>.
+          </p>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div className="rounded-lg border border-[#252D3A] bg-[#10151F] p-4 space-y-1">
           <span className="text-[#8D98A8] uppercase text-[10px]">Taxa de Disponibilidade</span>
@@ -70,11 +82,11 @@ export const AdminControlView: React.FC<AdminControlViewProps> = () => {
         </div>
 
         <div className="rounded-lg border border-[#252D3A] bg-[#10151F] p-4 space-y-1">
-          <span className="text-[#8D98A8] uppercase text-[10px]">Gemini Reasoning</span>
+          <span className="text-[#8D98A8] uppercase text-[10px]">Gemini Reasoning (Explicativo)</span>
           <span className="text-xl font-bold text-blue-400">
             {status?.aiAnalyst?.mode === 'SERVER_SIDE_LIVE' ? 'LIVE ONLINE' : 'DETERMINISTIC FALLBACK'}
           </span>
-          <span className="text-[10px] text-[#8D98A8]">Grounding estruturado</span>
+          <span className="text-[10px] text-[#8D98A8]">Isolamento estrito: apenas qualitativo</span>
         </div>
       </div>
 

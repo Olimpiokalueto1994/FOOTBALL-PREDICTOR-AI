@@ -36,8 +36,8 @@ export const historicalEvaluationDataset: HistoricalMatchEval[] = [
   { matchId: 'h20', fixture: 'West Ham vs Fulham', league: 'Premier League', predictedProbHome: 0.44, predictedProbDraw: 0.29, predictedProbAway: 0.27, actualOutcome: 'AWAY', homeScore: 0, awayScore: 2 },
 ];
 
-export function computeBacktestSummary(): BacktestSummary {
-  const matches = historicalEvaluationDataset;
+export function computeBacktestSummary(customDataset?: HistoricalMatchEval[]): BacktestSummary {
+  const matches = customDataset && customDataset.length > 0 ? customDataset : historicalEvaluationDataset;
   let correctPredictions = 0;
   let brierSum = 0;
   let logLossSum = 0;
@@ -143,7 +143,7 @@ export function computeBacktestSummary(): BacktestSummary {
   return {
     modelVersion: 'v1.4.2 (Walk-Forward Ensemble)',
     evaluatedMatchesCount: N,
-    evaluationPeriod: '2024–2026 Walk-Forward Validation',
+    evaluationPeriod: '2024–2026 Base Sintética Demonstrativa (Walk-Forward Simulator)',
     overallAccuracy,
     brierScore,
     logLoss,
@@ -155,5 +155,7 @@ export function computeBacktestSummary(): BacktestSummary {
     driftAlert: brierScore < 0.20 
       ? 'Distribuição das predições e calibração mantêm-se dentro dos limiares ótimos (Brier < 0.20).'
       : 'Atenção aos desvios em ligas com calendários congestionados.',
+    isSyntheticData: true,
+    dataSourceLabel: '[MODO DEMONSTRAÇÃO / DADOS SINTÉTICOS] Métricas calculadas sobre conjunto representativo sintético.',
   };
 }

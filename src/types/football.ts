@@ -255,4 +255,38 @@ export interface BacktestSummary {
   }[];
   modelDriftStatus: 'HEALTHY' | 'STABLE' | 'DEGRADED';
   driftAlert?: string;
+  isSyntheticData?: boolean;
+  dataSourceLabel?: string;
+}
+
+export interface HistoricalMatchEval {
+  matchId: string;
+  fixture: string;
+  league: string;
+  predictedProbHome: number;
+  predictedProbDraw: number;
+  predictedProbAway: number;
+  actualOutcome: 'HOME' | 'DRAW' | 'AWAY';
+  homeScore: number;
+  awayScore: number;
+}
+
+export interface DataProviderHealth {
+  status: 'ONLINE' | 'DEGRADED' | 'OFFLINE';
+  providerName: string;
+  isSynthetic: boolean;
+  message: string;
+  cacheTtlSeconds?: number;
+  cachedEntriesCount?: number;
+}
+
+export interface IFootballDataProvider {
+  readonly name: string;
+  readonly isSynthetic: boolean;
+  getMatches(filters?: { competition?: string; status?: string; search?: string; favoritesOnly?: boolean }): Promise<Match[]>;
+  getMatchById(id: string): Promise<Match | null>;
+  getHistoricalMatchesForBacktest(): Promise<HistoricalMatchEval[]>;
+  getTeamStats(teamId: string): Promise<TeamStats | null>;
+  getInjuries(teamId: string): Promise<PlayerInjury[]>;
+  checkHealth(): Promise<DataProviderHealth>;
 }

@@ -64,6 +64,11 @@ export const translations = {
     calibrationCurve: 'Curva de Calibração (Previsto vs Observado)',
     driftHealthy: 'Estável / Saudável',
     version: 'Versão',
+    demoModeBadge: '[MODO DEMONSTRAÇÃO / DADOS SINTÉTICOS]',
+    demoModeNotice: 'O sistema está operando sobre base de dados sintéticos para demonstração e auditoria dos algoritmos matemáticos.',
+    syntheticDataLabel: 'Dados Sintéticos Controlados',
+    liveApiLabel: 'Ingestão Live de API Externa',
+    auditNotice: 'Aviso: Dados gerados para validação estrutural do motor ensemble. Nenhuma probabilidade representa dinheiro real ou garantia estatística de aposta.',
   },
   en: {
     appTitle: 'Football Predictor AI',
@@ -128,5 +133,10 @@ export const translations = {
     calibrationCurve: 'Calibration Curve (Predicted vs Observed)',
     driftHealthy: 'Stable / Healthy',
     version: 'Version',
+    demoModeBadge: '[DEMONSTRATION MODE / SYNTHETIC DATA]',
+    demoModeNotice: 'The system is currently running with synthetic data fixtures for mathematical and pipeline audit purposes.',
+    syntheticDataLabel: 'Controlled Synthetic Data',
+    liveApiLabel: 'Live External API Ingestion',
+    auditNotice: 'Notice: Data generated for structural ensemble validation. Probabilities do not represent real-money recommendations.',
   },
 };

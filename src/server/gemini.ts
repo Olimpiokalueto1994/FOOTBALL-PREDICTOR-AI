@@ -2,6 +2,16 @@ import { GoogleGenAI, Type } from '@google/genai';
 import { Match, AIAnalysisOutput } from '../types/football';
 import { EnsembleResult } from './engine/mlEnsemble';
 
+/**
+ * ARCHITECTURAL INVARIANT: STRICT ISOLATION OF THE GENERATIVE AI LAYER
+ * 
+ * Google Gemini 3.8 Flash operates exclusively as a qualitative statistical analyst / explainer.
+ * - INPUT: Receives the pre-calculated probabilistic outputs from the deterministic mathematical ensemble.
+ * - OUTPUT: Produces qualitative reasoning (arguments favoring home/away, uncertainties, tactical overview).
+ * - CRITICAL CONSTRAINT: Gemini NEVER calculates, alters, or fabricates 1X2 probabilities, score matrices,
+ *   or expected goals. All quantitative metrics are generated deterministically by the mathematical core.
+ */
+
 let aiClient: GoogleGenAI | null = null;
 
 function getGeminiClient(): GoogleGenAI | null {

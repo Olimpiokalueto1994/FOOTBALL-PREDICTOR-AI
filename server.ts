@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
-import { INITIAL_MATCHES_DATABASE } from './src/server/data/mockDatabase';
+import { getDataProvider } from './src/server/data/index';
 import { runMatchEnsemble } from './src/server/engine/mlEnsemble';
 import { computeBacktestSummary } from './src/server/engine/backtestEngine';
 import { runAIFootballAnalyst, queryFootballPredictor } from './src/server/gemini';
@@ -13,9 +13,13 @@ async function startServer() {
 
   app.use(express.json());
 
+  const dataProvider = getDataProvider();
+  console.log(`[Server] Provedor de dados inicializado: ${dataProvider.name} (Sintético: ${dataProvider.isSynthetic})`);
+
   // In-memory persistent database for the session
   const matchesDb: Map<string, Match> = new Map();
-  INITIAL_MATCHES_DATABASE.forEach(m => matchesDb.set(m.id, { ...m }));
+  const initialMatches = await dataProvider.getMatches();
+  initialMatches.forEach(m => matchesDb.set(m.id, { ...m }));
 
   // Pre-calculate initial predictions for all fixtures so dashboard has instant data
   for (const match of matchesDb.values()) {
@@ -93,17 +97,23 @@ async function startServer() {
   // --- API Routes ---
 
   // Health check
-  app.get('/api/health', (req, res) => {
+  app.get('/api/health', async (req, res) => {
+    const health = await dataProvider.checkHealth();
     res.json({
       status: 'ok',
       engine: 'Football Predictor AI Core v1.4.2',
       matchesAvailable: matchesDb.size,
       time: new Date().toISOString(),
+      mode: dataProvider.isSynthetic ? 'DEMONSTRATION_SYNTHETIC' : 'LIVE_PRODUCTION',
+      isSyntheticData: dataProvider.isSynthetic,
+      dataProvider: health,
+      disclaimer: '[MODO DEMONSTRAÇÃO / DADOS SINTÉTICOS] As métricas e partidas são geradas a partir de base sintética/demonstrativa para validação do motor preditivo.'
     });
   });
 
   // Get all matches with optional filters
   app.get('/api/matches', (req, res) => {
+    res.setHeader('X-Data-Mode', dataProvider.isSynthetic ? 'DEMONSTRATION_SYNTHETIC' : 'LIVE');
     const { competition, status, search, favoritesOnly } = req.query;
     let list = Array.from(matchesDb.values());
 
@@ -133,6 +143,7 @@ async function startServer() {
 
   // Get single match detail
   app.get('/api/matches/:id', (req, res) => {
+    res.setHeader('X-Data-Mode', dataProvider.isSynthetic ? 'DEMONSTRATION_SYNTHETIC' : 'LIVE');
     const match = matchesDb.get(req.params.id);
     if (!match) {
       return res.status(404).json({ error: 'Match not found' });
@@ -148,10 +159,12 @@ async function startServer() {
     }
 
     try {
-      // 1. Run statistical & ML ensemble
+      // 1. Rigoroso cálculo determinístico pelo Ensemble Matemático (Poisson + Elo + Logistic + Trees)
+      // O Gemini NÃO calcula probabilidades; estas são calculadas exclusivamente aqui:
       const ensemble = runMatchEnsemble(match);
 
-      // 2. Run AI Football Analyst (Gemini or deterministic statistical fallback)
+      // 2. Execução do AI Football Analyst (Gemini ou Fallback determinístico)
+      // O modelo generativo atua ESTRITAMENTE como explicador qualitativo sobre o payload determinístico:
       const aiAnalysis = await runAIFootballAnalyst(match, ensemble);
 
       // 3. Build updated timeline entry
@@ -165,11 +178,11 @@ async function startServer() {
           homeProb: ensemble.probabilities.oneXTwo.home,
           drawProb: ensemble.probabilities.oneXTwo.draw,
           awayProb: ensemble.probabilities.oneXTwo.away,
-          triggerEvent: 'Execução do pipeline completo com interpretação do AI Analyst.'
+          triggerEvent: 'Execução do pipeline estatístico e geração de argumentos qualitativos.'
         }
       ];
 
-      // 4. Update stored match prediction
+      // 4. Update stored match prediction (Garantia de que probabilidades matemáticas são 100% preservadas)
       const predictionResult: PredictionResult = {
         matchId: match.id,
         modelVersion: 'v1.4.2 (Walk-Forward Ensemble)',
@@ -179,9 +192,9 @@ async function startServer() {
         dataConfidenceBreakdown: ensemble.dataConfidenceBreakdown,
         modelReliability: ensemble.modelReliability,
         reliabilityReason: ensemble.reliabilityReason,
-        probabilities: ensemble.probabilities,
+        probabilities: ensemble.probabilities, // Invariante: saídas puras do ensemble matemático
         factors: ensemble.factors,
-        aiAnalysis,
+        aiAnalysis, // Apenas explicações qualitativas
         timeline: updatedTimeline,
         marketDiscrepancy: ensemble.marketDiscrepancy,
         ensembleWeights: ensemble.ensembleWeights,
@@ -190,6 +203,7 @@ async function startServer() {
       match.prediction = predictionResult;
       matchesDb.set(match.id, match);
 
+      res.setHeader('X-Data-Mode', dataProvider.isSynthetic ? 'DEMONSTRATION_SYNTHETIC' : 'LIVE');
       res.json(predictionResult);
     } catch (err) {
       console.error('Prediction pipeline error:', err);
@@ -198,9 +212,15 @@ async function startServer() {
   });
 
   // Historical Model Backtest Summary
-  app.get('/api/backtest', (req, res) => {
-    const summary = computeBacktestSummary();
-    res.json(summary);
+  app.get('/api/backtest', async (req, res) => {
+    const historicalData = await dataProvider.getHistoricalMatchesForBacktest();
+    const summary = computeBacktestSummary(historicalData);
+    res.setHeader('X-Data-Mode', 'DEMONSTRATION_SYNTHETIC');
+    res.json({
+      ...summary,
+      isSyntheticData: true,
+      dataSourceLabel: '[MODO DEMONSTRAÇÃO / DADOS SINTÉTICOS] Conjunto histórico de calibração walk-forward sintético para validação do pipeline.',
+    });
   });
 
   // Natural language query ("Pergunte ao Predictor")
@@ -227,8 +247,12 @@ async function startServer() {
   });
 
   // System Diagnostics / Admin Data Control Center
-  app.get('/api/admin/status', (req, res) => {
+  app.get('/api/admin/status', async (req, res) => {
+    const providerHealth = await dataProvider.checkHealth();
     res.json({
+      mode: dataProvider.isSynthetic ? 'DEMONSTRATION_SYNTHETIC' : 'LIVE_PRODUCTION',
+      isSyntheticData: dataProvider.isSynthetic,
+      activeProvider: providerHealth,
       activeModels: [
         { name: 'Bivariate Dixon-Coles Poisson', version: 'v1.4.0', status: 'ACTIVE', weight: '35%' },
         { name: 'Dynamic Elo with Margin Adjust', version: 'v2.1.0', status: 'ACTIVE', weight: '25%' },
@@ -242,15 +266,23 @@ async function startServer() {
         driftStatus: 'HEALTHY',
       },
       dataProviders: [
-        { name: 'Opta Sports Engine Integration', status: 'ONLINE', coverage: 'Top 5 European Leagues', lastSync: '4 min atrás', errorRate: '0.0%' },
-        { name: 'Official League Disciplinary Portals', status: 'ONLINE', coverage: 'Suspensions & Bans', lastSync: '12 min atrás', errorRate: '0.0%' },
-        { name: 'Medical Staff & Press Conference Feed', status: 'ONLINE', coverage: 'Injuries & Lineups', lastSync: '18 min atrás', errorRate: '0.0%' },
-        { name: 'Exchange Liquidity & Consensus Odds', status: 'ONLINE', coverage: 'Fair Odds Margin Normalization', lastSync: '2 min atrás', errorRate: '0.0%' }
+        { 
+          name: providerHealth.providerName, 
+          status: providerHealth.status, 
+          coverage: 'Top 5 European Leagues', 
+          lastSync: 'Em tempo real (memória)', 
+          errorRate: '0.0%', 
+          type: dataProvider.isSynthetic ? 'Sintético / Demonstrativo' : 'API Live' 
+        },
+        { name: 'Official League Disciplinary Portals', status: 'ONLINE', coverage: 'Suspensions & Bans', lastSync: '12 min atrás', errorRate: '0.0%', type: 'Sintético' },
+        { name: 'Medical Staff & Press Conference Feed', status: 'ONLINE', coverage: 'Injuries & Lineups', lastSync: '18 min atrás', errorRate: '0.0%', type: 'Sintético' },
+        { name: 'Exchange Liquidity & Consensus Odds', status: 'ONLINE', coverage: 'Fair Odds Margin Normalization', lastSync: '2 min atrás', errorRate: '0.0%', type: 'Sintético' }
       ],
       aiAnalyst: {
         provider: 'Google DeepMind Gemini 3.8 Flash',
         mode: process.env.GEMINI_API_KEY ? 'SERVER_SIDE_LIVE' : 'DETERMINISTIC_STATISTICAL_FALLBACK',
-        outputType: 'Structured JSON Schema',
+        outputType: 'Structured JSON Schema (Qualitativo Exclusivo)',
+        role: 'Analista Explicativo Qualitativo (Probabilidades Matemáticas Calculadas Pelo Ensemble Determinístico)',
       },
       totalMatchesStored: matchesDb.size,
     });

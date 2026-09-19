@@ -51,14 +51,19 @@ export const ModelPerformanceView: React.FC<ModelPerformanceViewProps> = ({
       <div className="border-b border-[#252D3A] pb-5">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div>
-            <span className="text-xs font-mono uppercase tracking-wider text-emerald-400 font-semibold">
-              BACKTESTING & MODEL CALIBRATION ENGINE
-            </span>
+            <div className="flex items-center space-x-2">
+              <span className="text-xs font-mono uppercase tracking-wider text-emerald-400 font-semibold">
+                BACKTESTING & MODEL CALIBRATION ENGINE
+              </span>
+              <span className="rounded bg-amber-500/15 border border-amber-500/40 px-2 py-0.5 text-[10px] font-mono font-bold text-amber-400">
+                [MODO DEMONSTRAÇÃO / DADOS SINTÉTICOS]
+              </span>
+            </div>
             <h2 className="text-2xl font-bold tracking-tight text-[#F5F7FA] font-mono mt-0.5">
               Performance & Confiabilidade Estatística
             </h2>
             <p className="text-xs text-[#8D98A8] mt-1 font-sans">
-              Auditoria de previsões históricas sob rigoroso protocolo walk-forward (sem vazamento de dados futuros).
+              Auditoria de previsões sob protocolo walk-forward. Conjunto avaliativo com identificação formal de dados sintéticos para calibração de pipeline.
             </p>
           </div>
 
@@ -69,6 +74,14 @@ export const ModelPerformanceView: React.FC<ModelPerformanceViewProps> = ({
             <ShieldCheck className="h-4 w-4 text-blue-400" />
             <span>Fórmulas & Métricas</span>
           </button>
+        </div>
+
+        {/* Synthetic Backtest Notice */}
+        <div className="mt-4 rounded-md border border-amber-500/30 bg-amber-500/10 px-3.5 py-2.5 text-xs text-amber-300 font-mono flex items-start space-x-2">
+          <span className="font-bold whitespace-nowrap">[MODO DEMONSTRAÇÃO / DADOS SINTÉTICOS]</span>
+          <span className="text-amber-200/90 font-sans">
+            {summary.dataSourceLabel || 'As métricas de Brier Score e acurácia são calculadas sobre um dataset sintético de calibração walk-forward representativo.'}
+          </span>
         </div>
       </div>
 

@@ -31,14 +31,16 @@ export const Navbar: React.FC<NavbarProps> = ({
       <div id="top-telemetry-bar" className="hidden border-b border-[#252D3A]/60 bg-[#10151F] px-4 py-1 sm:block">
         <div className="mx-auto flex max-w-7xl items-center justify-between text-xs font-mono text-[#8D98A8]">
           <div className="flex items-center space-x-3">
+            <span className="inline-flex items-center rounded bg-amber-500/15 border border-amber-500/40 px-2 py-0.5 text-[10px] font-bold text-amber-400">
+              {t.demoModeBadge}
+            </span>
+            <span className="text-[#252D3A]">|</span>
             <span className="inline-flex items-center text-emerald-400 font-medium">
               <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
               ENSEMBLE CORE v1.4.2
             </span>
             <span className="text-[#252D3A]">|</span>
             <span>DIXON-COLES POISSON + ELO + ML</span>
-            <span className="text-[#252D3A]">|</span>
-            <span>WALK-FORWARD VALIDATION: HEALTHY</span>
           </div>
           <div className="flex items-center space-x-3">
             <button

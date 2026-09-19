@@ -33,9 +33,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       <div id="dashboard-header" className="border-b border-[#252D3A] pb-6 pt-2">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
-            <span className="text-xs font-mono uppercase tracking-wider text-emerald-400 font-semibold">
-              PREDICTIVE ENGINE • ENSEMBLE v1.4.2
-            </span>
+            <div className="flex items-center space-x-2">
+              <span className="text-xs font-mono uppercase tracking-wider text-emerald-400 font-semibold">
+                PREDICTIVE ENGINE • ENSEMBLE v1.4.2
+              </span>
+              <span className="rounded bg-amber-500/15 border border-amber-500/40 px-2 py-0.5 text-[10px] font-mono font-bold text-amber-400">
+                {t.demoModeBadge}
+              </span>
+            </div>
             <h1 className="text-3xl font-extrabold tracking-tight text-[#F5F7FA] font-mono sm:text-4xl mt-1">
               Football Predictor AI
             </h1>
@@ -47,7 +52,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           {/* Quick Metrics Bar */}
           <div className="flex flex-wrap gap-2 text-xs font-mono">
             <div className="rounded-md border border-[#252D3A] bg-[#10151F] px-3 py-1.5">
-              <span className="text-[#8D98A8]">Acurácia Histórica:</span>{' '}
+              <span className="text-[#8D98A8]">Acurácia (Sintética):</span>{' '}
               <span className="font-semibold text-emerald-400">68.4%</span>
             </div>
             <div className="rounded-md border border-[#252D3A] bg-[#10151F] px-3 py-1.5">
@@ -61,8 +66,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
+        {/* Explicit Demo Data Notice */}
+        <div className="mt-4 rounded-md border border-amber-500/30 bg-amber-500/10 px-3.5 py-2.5 text-xs text-amber-300 font-mono flex items-start space-x-2">
+          <span className="font-bold whitespace-nowrap">{t.demoModeBadge}</span>
+          <span className="text-amber-200/90 font-sans">
+            {t.demoModeNotice} Nenhuma métrica nesta tela reflete resultados financeiros reais.
+          </span>
+        </div>
+
         {/* Ethical disclaimer reminder */}
-        <div className="mt-4 rounded-md border border-[#252D3A]/70 bg-[#10151F]/60 px-3.5 py-2 text-xs text-[#8D98A8]">
+        <div className="mt-2 rounded-md border border-[#252D3A]/70 bg-[#10151F]/60 px-3.5 py-2 text-xs text-[#8D98A8]">
           <span className="font-medium text-[#F5F7FA]">Aviso Metodológico:</span> {t.disclaimer}
         </div>
       </div>
