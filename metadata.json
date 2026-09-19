@@ -1,0 +1,6 @@
+{
+  "name": "Football Predictor AI",
+  "description": "Sistema inteligente de análise, modelagem e previsão de partidas de futebol com modelos estatísticos, Machine Learning e IA explicável.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
