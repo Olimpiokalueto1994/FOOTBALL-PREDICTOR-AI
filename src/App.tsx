@@ -18,6 +18,7 @@ import { CustomBetValidator } from './components/CustomBetValidator';
 import { TransparencyModal } from './components/TransparencyModal';
 import { Language } from './i18n/translations';
 import { Loader2 } from 'lucide-react';
+import { DashboardSkeleton } from './components/DashboardSkeleton';
 
 export default function App() {
   const [matches, setMatches] = useState<Match[]>([]);
@@ -244,12 +245,7 @@ export default function App() {
 
         {/* Main Content Viewport */}
         <main className="flex-1 px-4 py-6 sm:px-8 max-w-7xl mx-auto w-full">
-          {loading && (
-            <div className="flex h-96 flex-col items-center justify-center space-y-3 font-mono text-xs text-slate-500 dark:text-slate-400">
-              <Loader2 className="h-7 w-7 animate-spin text-blue-600 dark:text-blue-400" />
-              <span>Iniciando motor probabilístico e calibrando previsões de hoje...</span>
-            </div>
-          )}
+          {loading && <DashboardSkeleton />}
 
           {error && (
             <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-6 text-center font-mono text-xs text-rose-500 dark:text-rose-400">
