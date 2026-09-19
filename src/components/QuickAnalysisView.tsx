@@ -178,8 +178,12 @@ export const QuickAnalysisView: React.FC<QuickAnalysisViewProps> = ({
                 <span className="text-xs font-mono font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
                   Apuração em Tempo Real & Modelagem Probabilística
                 </span>
-                <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-[10px] font-mono text-emerald-700 dark:text-emerald-300 font-semibold">
-                  Google Grounding
+                <span className={`rounded px-2 py-0.5 text-[10px] font-mono font-semibold ${
+                  liveResult.isQuotaLimited
+                    ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20'
+                    : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                }`}>
+                  {liveResult.isQuotaLimited ? 'Motor Estatístico Local' : 'Google Grounding'}
                 </span>
               </div>
               <h2 className="text-lg font-bold text-slate-900 dark:text-[#F8FAFC] mt-1">
@@ -361,19 +365,28 @@ export const QuickAnalysisView: React.FC<QuickAnalysisViewProps> = ({
           {/* Sources Grounding */}
           {liveResult.sources && liveResult.sources.length > 0 && (
             <div className="pt-3 border-t border-slate-200 dark:border-[#1E2638] flex flex-wrap items-center gap-2 text-xs font-mono text-slate-500 dark:text-[#8D98A8]">
-              <span className="text-slate-400">Fontes Web Consultadas:</span>
-              {liveResult.sources.map((src, idx) => (
-                <a
-                  key={idx}
-                  href={src.uri}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="inline-flex items-center space-x-1 rounded bg-slate-100 dark:bg-[#141A29] px-2.5 py-1 text-blue-600 dark:text-blue-400 hover:text-blue-500 border border-slate-200 dark:border-[#232D42] text-[11px]"
-                >
-                  <span className="truncate max-w-[200px]">{src.title}</span>
-                  <ExternalLink className="h-2.5 w-2.5" />
-                </a>
-              ))}
+              <span className="text-slate-400">Fontes & Referências:</span>
+              {liveResult.sources.map((src, idx) => 
+                src.uri.startsWith('local://') ? (
+                  <span
+                    key={idx}
+                    className="inline-flex items-center space-x-1 rounded bg-slate-100 dark:bg-[#141A29] px-2.5 py-1 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-[#232D42] text-[11px]"
+                  >
+                    <span className="truncate max-w-[280px]">{src.title}</span>
+                  </span>
+                ) : (
+                  <a
+                    key={idx}
+                    href={src.uri}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="inline-flex items-center space-x-1 rounded bg-slate-100 dark:bg-[#141A29] px-2.5 py-1 text-blue-600 dark:text-blue-400 hover:text-blue-500 border border-slate-200 dark:border-[#232D42] text-[11px]"
+                  >
+                    <span className="truncate max-w-[200px]">{src.title}</span>
+                    <ExternalLink className="h-2.5 w-2.5" />
+                  </a>
+                )
+              )}
             </div>
           )}
         </div>

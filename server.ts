@@ -6,13 +6,16 @@ import { TheOddsApiProvider } from './src/server/data/TheOddsApiProvider';
 import { runMatchEnsemble } from './src/server/engine/mlEnsemble';
 import { computeBacktestSummary } from './src/server/engine/backtestEngine';
 import { runAIFootballAnalyst, queryFootballPredictor, searchAndAnalyzeLiveMatch } from './src/server/gemini';
+import { appDb } from './src/server/db/database';
+import { settlePendingBets } from './src/server/engine/settlementEngine';
 import { 
   Match, 
   PredictionResult, 
   PredictionTimelineEntry,
   BetValidationRequest,
   BetValidationResult,
-  BetMarketType
+  BetMarketType,
+  TrackedBet
 } from './src/types/football';
 
 async function startServer() {
@@ -20,6 +23,9 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(express.json());
+
+  // Inicializa o banco de dados persistente SQLite (sql.js)
+  await appDb.init();
 
   const activeApiKey = process.env.FOOTBALL_DATA_API_KEY || '907624fc74324e069961ea1ad1da0b85';
   const dataProvider = new ApiFootballDataProvider(activeApiKey);
@@ -302,11 +308,11 @@ async function startServer() {
     }
 
     try {
-      const liveAnalysis = await searchAndAnalyzeLiveMatch(query.trim());
-      res.setHeader('X-Data-Source', 'GOOGLE_SEARCH_GROUNDING_LIVE');
+      const liveAnalysis = await searchAndAnalyzeLiveMatch(query.trim(), Array.from(matchesDb.values()));
+      res.setHeader('X-Data-Source', liveAnalysis.isQuotaLimited ? 'LOCAL_STATISTICAL_ENGINE' : 'GOOGLE_SEARCH_GROUNDING_LIVE');
       res.json(liveAnalysis);
-    } catch (error) {
-      console.error('Erro na rota /api/live-search:', error);
+    } catch (error: any) {
+      console.warn('Alerta na rota /api/live-search:', error?.message || error);
       res.status(500).json({ error: 'Falha ao processar pesquisa ao vivo' });
     }
   });
@@ -407,7 +413,7 @@ async function startServer() {
       } else {
         // Confronto avulso fora da lista -> Executar Gemini com Google Search Grounding em tempo real
         isLiveSearched = true;
-        const liveAnalysis = await searchAndAnalyzeLiveMatch(queryTrim);
+        const liveAnalysis = await searchAndAnalyzeLiveMatch(queryTrim, Array.from(matchesDb.values()));
         identifiedHome = liveAnalysis.homeTeam || 'Time Mandante';
         identifiedAway = liveAnalysis.awayTeam || 'Time Visitante';
         identifiedComp = liveAnalysis.competition || 'Competição Nacional/Internacional';
@@ -596,6 +602,106 @@ async function startServer() {
     match.isFavorite = !match.isFavorite;
     matchesDb.set(match.id, match);
     res.json({ id: match.id, isFavorite: match.isFavorite });
+  });
+
+  // ==================== BET TRACKING & SETTLEMENT ENGINE ====================
+
+  // List all tracked bets and ROI metrics
+  app.get('/api/bets', (req, res) => {
+    const bets = appDb.getAllBets();
+    const summary = appDb.computeSummaryStats();
+    res.json({ bets, summary });
+  });
+
+  // Save a new bet from the validator or match card
+  app.post('/api/bets', (req, res) => {
+    try {
+      const {
+        match_id,
+        match_title,
+        competition,
+        market_chosen,
+        market_label,
+        odd,
+        stake,
+        currency,
+        predicted_prob,
+        fair_odd,
+        ev_value,
+      } = req.body;
+
+      if (!match_title || !odd || !stake) {
+        return res.status(400).json({ error: 'Título da partida, odd e valor da aposta (stake) são obrigatórios.' });
+      }
+
+      const id = `bet-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      const savedBet = appDb.insertBet({
+        id,
+        match_id: match_id || `match-${Date.now()}`,
+        match_title: String(match_title).trim(),
+        competition: competition || 'Competição Oficial',
+        market_chosen: String(market_chosen || 'HOME').toUpperCase(),
+        market_label: String(market_label || market_chosen || 'Mercado Geral').trim(),
+        odd: Number(odd),
+        stake: Number(stake),
+        currency: (currency as any) || (appDb.getSetting('currency') as any) || 'AOA',
+        predicted_prob: Number(predicted_prob) || 50,
+        fair_odd: Number(fair_odd) || 2.0,
+        ev_value: Number(ev_value) || 0,
+        status: 'PENDING',
+        score_home: null,
+        score_away: null,
+        profit_loss: null,
+        settled_at: null,
+      });
+
+      const summary = appDb.computeSummaryStats();
+      console.log(`[Bets] Nova aposta salva no SQLite: ${savedBet.id} - ${savedBet.match_title} (${savedBet.stake} ${savedBet.currency})`);
+      res.status(201).json({ success: true, bet: savedBet, summary });
+    } catch (err: any) {
+      console.error('[Bets] Erro ao registrar aposta:', err);
+      res.status(500).json({ error: 'Falha ao persistir aposta no banco de dados SQLite.' });
+    }
+  });
+
+  // Settle / Audit pending bets (Pós-Jogo)
+  app.post('/api/bets/settle', async (req, res) => {
+    try {
+      const { betId } = req.body || {};
+      const result = await settlePendingBets(matchesDb, betId);
+      console.log(`[Settlement Engine] Liquidação processada. Resolvidas: ${result.settledCount}, Pendentes: ${result.pendingCount}`);
+      res.json(result);
+    } catch (err: any) {
+      console.error('[Settlement Engine] Erro na auditoria de apostas:', err);
+      res.status(500).json({ error: 'Falha ao auditar resultados e liquidar apostas.' });
+    }
+  });
+
+  // Delete a tracked bet
+  app.delete('/api/bets/:id', (req, res) => {
+    try {
+      const success = appDb.deleteBet(req.params.id);
+      const summary = appDb.computeSummaryStats();
+      res.json({ success, summary });
+    } catch (err: any) {
+      res.status(500).json({ error: 'Falha ao excluir aposta.' });
+    }
+  });
+
+  // Get user settings (active currency, etc.)
+  app.get('/api/settings', (req, res) => {
+    const currency = appDb.getSetting('currency') || 'AOA';
+    res.json({ currency });
+  });
+
+  // Update user settings
+  app.post('/api/settings', (req, res) => {
+    const { key, value } = req.body;
+    if (!key || value === undefined) {
+      return res.status(400).json({ error: 'Chave e valor são obrigatórios.' });
+    }
+    appDb.setSetting(String(key), String(value));
+    res.json({ success: true, key, value });
   });
 
   // System Diagnostics / Admin Data Control Center

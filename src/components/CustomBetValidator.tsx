@@ -19,15 +19,18 @@ import {
   Globe2,
   Info
 } from 'lucide-react';
-import { Match, BetValidationResult, BetMarketType } from '../types/football';
-import { validateBet } from '../services/api';
+import { Match, BetValidationResult, BetMarketType, CurrencyCode } from '../types/football';
+import { validateBet, saveBet } from '../services/api';
 import { Language } from '../i18n/translations';
+import { formatMoney, CURRENCIES } from '../utils/currency';
 
 interface CustomBetValidatorProps {
   matches: Match[];
   language?: Language;
   initialMatch?: Match | null;
   onSelectMatch?: (matchId: string) => void;
+  currency?: CurrencyCode;
+  onNavigateToHistory?: () => void;
 }
 
 export const CustomBetValidator: React.FC<CustomBetValidatorProps> = ({
@@ -35,6 +38,8 @@ export const CustomBetValidator: React.FC<CustomBetValidatorProps> = ({
   language = 'pt',
   initialMatch = null,
   onSelectMatch,
+  currency = 'AOA',
+  onNavigateToHistory,
 }) => {
   // Form State
   const [matchQuery, setMatchQuery] = useState<string>(
@@ -43,11 +48,13 @@ export const CustomBetValidator: React.FC<CustomBetValidatorProps> = ({
   const [selectedMarket, setSelectedMarket] = useState<BetMarketType>('HOME');
   const [customMarketLabel, setCustomMarketLabel] = useState<string>('');
   const [offeredOdd, setOfferedOdd] = useState<string>('1.85');
-  const [stake, setStake] = useState<string>('100');
+  const [stake, setStake] = useState<string>('5000');
   const [manualProbOverride, setManualProbOverride] = useState<number | null>(null);
 
   // Status & Results
   const [loading, setLoading] = useState<boolean>(false);
+  const [saving, setSaving] = useState<boolean>(false);
+  const [savedBetSuccess, setSavedBetSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [validationResult, setValidationResult] = useState<BetValidationResult | null>(null);
   const [showFormulas, setShowFormulas] = useState<boolean>(false);
@@ -99,6 +106,7 @@ export const CustomBetValidator: React.FC<CustomBetValidatorProps> = ({
     setError(null);
 
     try {
+      setSavedBetSuccess(null);
       const res = await validateBet({
         matchQuery: query,
         market: selectedMarket,
@@ -114,6 +122,34 @@ export const CustomBetValidator: React.FC<CustomBetValidatorProps> = ({
       setError(err.message || 'Falha ao processar simulação da aposta.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Save bet into SQLite persistent bankroll
+  const handleSaveBet = async () => {
+    if (!validationResult) return;
+    try {
+      setSaving(true);
+      const matchId = (validationResult.identifiedMatch as any).id || (initialMatch ? initialMatch.id : `custom-${Date.now()}`);
+      const res = await saveBet({
+        match_id: matchId,
+        match_title: `${validationResult.identifiedMatch.homeTeam} vs ${validationResult.identifiedMatch.awayTeam}`,
+        competition: validationResult.identifiedMatch.competition || 'Competição Oficial',
+        market_chosen: validationResult.market.key,
+        market_label: validationResult.market.label,
+        odd: validationResult.offeredOdd,
+        stake: validationResult.stake,
+        currency: currency,
+        predicted_prob: validationResult.estimatedProbability,
+        fair_odd: validationResult.fairOdd,
+        ev_value: validationResult.expectedValuePercentage,
+      });
+      setSavedBetSuccess(res.bet.id);
+    } catch (err: any) {
+      console.error('Erro ao salvar aposta no SQLite:', err);
+      setError(err.message || 'Falha ao persistir aposta no banco de dados SQLite.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -336,20 +372,22 @@ export const CustomBetValidator: React.FC<CustomBetValidatorProps> = ({
                 <Percent className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
               </div>
 
-              {/* Stake Opcional para cálculo de ganhos */}
+              {/* Stake Opcional para cálculo de ganhos com Moeda */}
               <div className="pt-2 flex items-center space-x-2">
                 <span className="text-[11px] text-slate-500 dark:text-slate-400 shrink-0">
-                  Valor Aposta:
+                  Valor Aposta ({CURRENCIES[currency]?.symbol || 'Kz'}):
                 </span>
                 <input
                   type="text"
                   inputMode="numeric"
                   value={stake}
                   onChange={(e) => setStake(e.target.value)}
-                  placeholder="100"
-                  className="w-24 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-2 py-1 text-xs text-slate-800 dark:text-slate-200"
+                  placeholder="5000"
+                  className="w-28 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-2 py-1 text-xs font-mono font-bold text-slate-800 dark:text-slate-200"
                 />
-                <span className="text-[11px] text-slate-400">KZ / R$</span>
+                <span className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
+                  {currency}
+                </span>
               </div>
             </div>
           </div>
@@ -491,6 +529,57 @@ export const CustomBetValidator: React.FC<CustomBetValidatorProps> = ({
                 </span>
               </div>
             </div>
+
+            {/* Persistent Bankroll Action Bar */}
+            <div className="mt-5 pt-4 border-t border-black/10 dark:border-white/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="text-xs">
+                {savedBetSuccess ? (
+                  <div className="flex items-center space-x-2 text-emerald-700 dark:text-emerald-300 font-semibold">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                    <span>Aposta persistida no SQLite com status PENDENTE! Pronta para auditoria pós-jogo.</span>
+                  </div>
+                ) : (
+                  <span className="opacity-80">
+                    Deseja acompanhar esta entrada no histórico e auditar o resultado após o término?
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center space-x-2 shrink-0">
+                {savedBetSuccess ? (
+                  onNavigateToHistory && (
+                    <button
+                      type="button"
+                      onClick={onNavigateToHistory}
+                      className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-xs transition-all"
+                    >
+                      <span>Ver no Histórico & Auditoria</span>
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </button>
+                  )
+                ) : (
+                  <button
+                    id="btn-save-bet-to-bankroll"
+                    type="button"
+                    onClick={handleSaveBet}
+                    disabled={saving}
+                    className="inline-flex items-center space-x-2 px-4 py-2 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-100 text-xs font-bold shadow-sm transition-all disabled:opacity-50"
+                  >
+                    {saving ? (
+                      <>
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        <span>Gravando no SQLite...</span>
+                      </>
+                    ) : (
+                      <>
+                        <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
+                        <span>Salvar Aposta na Banca ({formatMoney(validationResult.stake, currency)})</span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* 2. Decomposição das Métricas Matemáticas */}
@@ -549,11 +638,11 @@ export const CustomBetValidator: React.FC<CustomBetValidatorProps> = ({
             {/* Card 4: Retorno com a Stake Informada */}
             <div className="rounded-2xl border border-slate-200 dark:border-[#1E2638] bg-white dark:bg-[#0B101B] p-4 shadow-xs">
               <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
-                <span>Simulação da Stake ({validationResult.stake})</span>
+                <span>Simulação da Stake ({formatMoney(validationResult.stake, currency)})</span>
                 <DollarSign className="h-3.5 w-3.5 text-emerald-500" />
               </div>
-              <div className="text-2xl font-bold text-slate-900 dark:text-white">
-                {validationResult.potentialReturn.toFixed(2)}
+              <div className="text-2xl font-bold text-slate-900 dark:text-white font-mono">
+                {formatMoney(validationResult.potentialReturn, currency)}
               </div>
               <p className="mt-1 text-[11px] text-slate-400 font-mono">
                 Retorno Bruto se bater
@@ -561,8 +650,7 @@ export const CustomBetValidator: React.FC<CustomBetValidatorProps> = ({
               <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400 leading-tight">
                 Lucro esperado ponderado:{' '}
                 <strong className={validationResult.expectedProfit > 0 ? 'text-emerald-500' : 'text-rose-500'}>
-                  {validationResult.expectedProfit > 0 ? '+' : ''}
-                  {validationResult.expectedProfit.toFixed(2)}
+                  {formatMoney(validationResult.expectedProfit, currency, true)}
                 </strong>
               </div>
             </div>

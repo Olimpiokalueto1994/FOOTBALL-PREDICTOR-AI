@@ -12,8 +12,12 @@ import {
   User,
   Settings,
   ShieldCheck,
-  LogOut
+  LogOut,
+  Coins,
+  Check
 } from 'lucide-react';
+import { CurrencyCode } from '../types/football';
+import { CURRENCIES } from '../utils/currency';
 
 interface AppHeaderProps {
   sidebarCollapsed: boolean;
@@ -21,6 +25,8 @@ interface AppHeaderProps {
   onOpenMobileMenu: () => void;
   theme: 'dark' | 'light';
   toggleTheme: () => void;
+  currency?: CurrencyCode;
+  onCurrencyChange?: (currency: CurrencyCode) => void;
   searchTerm: string;
   setSearchTerm: (term: string) => void;
   onSearchSubmit: (term: string) => void;
@@ -35,6 +41,8 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   onOpenMobileMenu,
   theme,
   toggleTheme,
+  currency = 'AOA',
+  onCurrencyChange,
   searchTerm,
   setSearchTerm,
   onSearchSubmit,
@@ -43,14 +51,19 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   userRole = 'Analista de Futebol',
 }) => {
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+  const [currencyDropdownOpen, setCurrencyDropdownOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const currencyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setProfileDropdownOpen(false);
         setNotificationsOpen(false);
+      }
+      if (currencyRef.current && !currencyRef.current.contains(event.target as Node)) {
+        setCurrencyDropdownOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -148,6 +161,64 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                     Previsões atualizadas com calibração Dixon-Coles às 15:30.
                   </p>
                 </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Currency Selector (Kz / AOA Padrão, USD, EUR, BRL) */}
+        <div className="relative" ref={currencyRef}>
+          <button
+            id="btn-currency-selector"
+            onClick={() => setCurrencyDropdownOpen(!currencyDropdownOpen)}
+            title="Alterar Moeda de Exibição"
+            className="flex h-9 items-center space-x-1.5 px-3 rounded-full border border-slate-200 dark:border-[#20293D] bg-slate-100 dark:bg-[#121826] text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-[#1A2337] transition-all text-xs font-semibold shadow-2xs"
+          >
+            <Coins className="h-3.5 w-3.5 text-emerald-500" />
+            <span className="font-mono">{CURRENCIES[currency]?.symbol || 'Kz'}</span>
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">({currency})</span>
+            <ChevronDown className="h-3 w-3 text-slate-400" />
+          </button>
+
+          {currencyDropdownOpen && (
+            <div className="absolute right-0 mt-2 w-52 rounded-xl border border-slate-200 dark:border-[#20293D] bg-white dark:bg-[#101726] p-1.5 shadow-xl z-50 text-xs">
+              <div className="px-2.5 py-1.5 border-b border-slate-100 dark:border-slate-800 mb-1">
+                <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Moeda da Banca</p>
+              </div>
+              <div className="space-y-0.5">
+                {(Object.keys(CURRENCIES) as CurrencyCode[]).map((code) => {
+                  const item = CURRENCIES[code];
+                  const isSelected = currency === code;
+                  return (
+                    <button
+                      key={code}
+                      onClick={() => {
+                        if (onCurrencyChange) onCurrencyChange(code);
+                        setCurrencyDropdownOpen(false);
+                      }}
+                      className={`w-full flex items-center justify-between rounded-lg px-2.5 py-2 transition-colors text-left ${
+                        isSelected
+                          ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 font-bold'
+                          : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#151C2C]'
+                      }`}
+                    >
+                      <div className="flex items-center space-x-2">
+                        <span className="font-mono font-bold w-6 text-center text-slate-900 dark:text-white">
+                          {item.symbol}
+                        </span>
+                        <div className="flex flex-col">
+                          <span className="text-xs">{item.label}</span>
+                          {code === 'AOA' && (
+                            <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-mono">
+                              Moeda Principal (Angola)
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {isSelected && <Check className="h-3.5 w-3.5 text-blue-500" />}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}

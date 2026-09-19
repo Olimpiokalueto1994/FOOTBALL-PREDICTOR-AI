@@ -11,6 +11,7 @@ import {
   MatchSource
 } from '../../types/football';
 import { MockFootballDataProvider } from './MockFootballDataProvider';
+import { appDb } from '../db/database';
 
 interface CacheEntry<T> {
   data: T;
@@ -72,23 +73,31 @@ export class ApiFootballDataProvider implements IFootballDataProvider {
   private apiKey: string;
   private fallbackProvider: MockFootballDataProvider;
   private cache: Map<string, CacheEntry<any>> = new Map();
-  private readonly defaultTtlMs = 3 * 60 * 1000; // 3 minutos de cache
+  private readonly defaultTtlMs = 20 * 60 * 1000; // 20 minutos de cache para partidas
   private storedMatches: Map<string, Match> = new Map();
 
   constructor(apiKey?: string) {
     this.apiKey = apiKey || process.env.FOOTBALL_DATA_API_KEY || '907624fc74324e069961ea1ad1da0b85';
     this.fallbackProvider = new MockFootballDataProvider();
-    console.log(`[ApiFootballDataProvider] Conectando com chave ativa: ${this.apiKey.substring(0, 6)}... à football-data.org`);
+    console.log(`[ApiFootballDataProvider] Conectando com chave ativa: ${this.apiKey.substring(0, 6)}... à football-data.org (Cache TTL: 20 min)`);
   }
 
   private getCached<T>(key: string): T | null {
+    // 1. Checa memória
     const entry = this.cache.get(key);
-    if (!entry) return null;
-    if (Date.now() > entry.expiresAt) {
-      this.cache.delete(key);
-      return null;
+    if (entry && Date.now() <= entry.expiresAt) {
+      return entry.data as T;
     }
-    return entry.data as T;
+    // 2. Checa SQLite persistente
+    const dbCached = appDb.getCache<T>(key);
+    if (dbCached && dbCached.isCached) {
+      this.cache.set(key, {
+        data: dbCached.data,
+        expiresAt: dbCached.expiresAt,
+      });
+      return dbCached.data;
+    }
+    return null;
   }
 
   private setCached<T>(key: string, data: T, ttlMs: number = this.defaultTtlMs): void {
@@ -96,6 +105,8 @@ export class ApiFootballDataProvider implements IFootballDataProvider {
       data,
       expiresAt: Date.now() + ttlMs,
     });
+    // Salva no SQLite com TTL em segundos
+    appDb.setCache(key, data, Math.round(ttlMs / 1000));
   }
 
   /**
@@ -337,6 +348,27 @@ export class ApiFootballDataProvider implements IFootballDataProvider {
       return filtered;
     } catch (error: any) {
       console.error('[ApiFootballDataProvider] Erro ao conectar com football-data.org:', error.message);
+      
+      // Contingência de Rate Limit (429) ou queda: Recupera do cache persistente
+      const stale = appDb.getStaleCache<Match[]>(cacheKey);
+      if (stale && stale.data && stale.data.length > 0) {
+        console.log('[ApiFootballDataProvider] Servindo dados de contingência de cache persistente.');
+        return stale.data.map(m => ({
+          ...m,
+          sources: [
+            ...(m.sources || []),
+            {
+              name: 'Cache Local (Contingência de Quota)',
+              type: 'STATS',
+              url: 'local://cache',
+              updatedAt: new Date().toISOString(),
+              status: 'CONFIRMED',
+              snippet: '[Dados em Cache] Partida recuperada do cache local para proteção de cota de requisições.'
+            }
+          ]
+        }));
+      }
+
       // Se já temos partidas em cache na memória, retorna elas
       if (this.storedMatches.size > 0) {
         return Array.from(this.storedMatches.values());

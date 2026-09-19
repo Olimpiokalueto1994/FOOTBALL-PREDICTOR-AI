@@ -393,6 +393,7 @@ export interface LiveMatchAnalysisResult {
   sources: { title: string; uri: string }[];
   isLiveSearched: boolean;
   analyzedAt: string;
+  isQuotaLimited?: boolean;
 }
 
 export type BetMarketType = 
@@ -408,12 +409,67 @@ export type BetMarketType =
   | 'DOUBLE_12' 
   | 'CUSTOM';
 
+export type CurrencyCode = 'AOA' | 'USD' | 'EUR' | 'BRL';
+
+export interface CurrencyConfig {
+  code: CurrencyCode;
+  symbol: string;
+  label: string;
+  position: 'prefix' | 'suffix';
+}
+
+export type BetStatus = 'PENDING' | 'WON' | 'LOST' | 'VOID';
+
+export interface TrackedBet {
+  id: string;
+  match_id: string;
+  match_title: string;
+  competition: string;
+  market_chosen: string;
+  market_label: string;
+  odd: number;
+  stake: number;
+  currency: CurrencyCode;
+  predicted_prob: number;
+  fair_odd: number;
+  ev_value: number;
+  status: BetStatus;
+  score_home: number | null;
+  score_away: number | null;
+  profit_loss: number | null;
+  created_at: string;
+  settled_at: string | null;
+}
+
+export interface BetSummaryStats {
+  totalBets: number;
+  pendingBets: number;
+  settledBets: number;
+  wonBets: number;
+  lostBets: number;
+  voidBets: number;
+  winRate: number; // Win rate percentage (won / (won + lost) * 100)
+  totalStaked: number;
+  totalProfitLoss: number;
+  roi: number; // (totalProfitLoss / totalStaked) * 100
+}
+
+export interface SettleResponse {
+  success: boolean;
+  message: string;
+  settledCount: number;
+  pendingCount: number;
+  settledBets: TrackedBet[];
+  summary: BetSummaryStats;
+}
+
 export interface BetValidationRequest {
   matchQuery: string;
   market: BetMarketType | string;
   marketLabel?: string;
   offeredOdd: number;
   stake?: number;
+  currency?: CurrencyCode;
   manualProbability?: number;
 }
 

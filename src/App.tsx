@@ -4,8 +4,8 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { Match, PredictionResult } from './types/football';
-import { getMatches, toggleFavoriteMatch, getAdminStatus } from './services/api';
+import { Match, PredictionResult, CurrencyCode } from './types/football';
+import { getMatches, toggleFavoriteMatch, getAdminStatus, getSettings, updateSetting } from './services/api';
 import { Sidebar, NavTabId } from './components/Sidebar';
 import { AppHeader } from './components/AppHeader';
 import { DashboardView } from './components/DashboardView';
@@ -30,6 +30,40 @@ export default function App() {
   const [language, setLanguage] = useState<Language>('pt');
   const [isSyntheticData, setIsSyntheticData] = useState<boolean>(true);
   const [searchPrefill, setSearchPrefill] = useState<string>('');
+
+  // Currency State (Defaults to Kwanza Angolano / AOA as requested, synchronized with SQLite settings)
+  const [currency, setCurrency] = useState<CurrencyCode>(() => {
+    try {
+      const saved = localStorage.getItem('fp_currency');
+      if (saved && (saved === 'AOA' || saved === 'USD' || saved === 'EUR' || saved === 'BRL')) {
+        return saved as CurrencyCode;
+      }
+    } catch (e) {}
+    return 'AOA';
+  });
+
+  useEffect(() => {
+    getSettings()
+      .then((res) => {
+        if (res?.currency) {
+          setCurrency(res.currency);
+          try {
+            localStorage.setItem('fp_currency', res.currency);
+          } catch (e) {}
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleCurrencyChange = (newCurr: CurrencyCode) => {
+    setCurrency(newCurr);
+    try {
+      localStorage.setItem('fp_currency', newCurr);
+    } catch (e) {}
+    updateSetting('currency', newCurr).catch((err) => {
+      console.warn('Falha ao sincronizar moeda com o servidor:', err);
+    });
+  };
 
   const [isTransparencyModalOpen, setIsTransparencyModalOpen] = useState<boolean>(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
@@ -191,7 +225,7 @@ export default function App() {
           sidebarCollapsed ? 'lg:pl-20' : 'lg:pl-64'
         }`}
       >
-        {/* Top App Header with Search, Notification, Theme Toggle, User Profile */}
+        {/* Top App Header with Search, Notification, Theme Toggle, User Profile and Currency selector */}
         <AppHeader
           sidebarCollapsed={sidebarCollapsed}
           onToggleSidebar={toggleSidebar}
@@ -202,6 +236,8 @@ export default function App() {
           setSearchTerm={setSearchPrefill}
           onSearchSubmit={handleGlobalSearch}
           onOpenTransparencyModal={() => setIsTransparencyModalOpen(true)}
+          currency={currency}
+          onCurrencyChange={handleCurrencyChange}
           userName="Olimpio Kalueto"
           userRole="Analista de Futebol"
         />
@@ -283,6 +319,8 @@ export default function App() {
                       language={language}
                       initialMatch={validatorSelectedMatch}
                       onSelectMatch={handleSelectMatch}
+                      currency={currency}
+                      onNavigateToHistory={() => setCurrentTab('history')}
                     />
                   )}
 
@@ -298,6 +336,8 @@ export default function App() {
                       matches={matches}
                       onSelectMatch={handleSelectMatch}
                       language={language}
+                      currency={currency}
+                      onNavigateToValidator={() => setCurrentTab('validator')}
                     />
                   )}
 
