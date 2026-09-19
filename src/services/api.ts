@@ -1,4 +1,4 @@
-import { Match, PredictionResult, BacktestSummary } from '../types/football';
+import { Match, PredictionResult, BacktestSummary, LiveMatchAnalysisResult, DetailedMarketOdds } from '../types/football';
 
 export async function getMatches(params?: {
   competition?: string;
@@ -23,6 +23,22 @@ export async function getMatch(id: string): Promise<Match> {
   return res.json();
 }
 
+export async function getMatchOdds(id: string): Promise<DetailedMarketOdds> {
+  const res = await fetch(`/api/odds/${id}`);
+  if (!res.ok) throw new Error('Failed to fetch match odds');
+  return res.json();
+}
+
+export async function updateOddsApiKey(apiKey: string): Promise<{ success: boolean; message: string }> {
+  const res = await fetch('/api/admin/odds-key', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ apiKey }),
+  });
+  if (!res.ok) throw new Error('Failed to update The-Odds-API key');
+  return res.json();
+}
+
 export async function runPrediction(id: string): Promise<PredictionResult> {
   const res = await fetch(`/api/predict/${id}`, {
     method: 'POST',
@@ -38,7 +54,11 @@ export async function getBacktestSummary(): Promise<BacktestSummary> {
   return res.json();
 }
 
-export async function queryPredictor(query: string): Promise<{ answer: string; relatedMatchId?: string }> {
+export async function queryPredictor(query: string): Promise<{ 
+  answer: string; 
+  relatedMatchId?: string;
+  sources?: { title: string; uri: string }[];
+}> {
   const res = await fetch('/api/query', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -61,3 +81,14 @@ export async function getAdminStatus(): Promise<any> {
   if (!res.ok) throw new Error('Failed to fetch admin status');
   return res.json();
 }
+
+export async function searchLiveMatch(query: string): Promise<LiveMatchAnalysisResult> {
+  const res = await fetch('/api/live-search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query }),
+  });
+  if (!res.ok) throw new Error('Falha ao processar pesquisa ao vivo');
+  return res.json();
+}
+

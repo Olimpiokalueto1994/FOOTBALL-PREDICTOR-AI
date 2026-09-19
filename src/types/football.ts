@@ -85,6 +85,62 @@ export interface MarketOdds {
   bttsYes?: number;
   bttsNo?: number;
   updatedAt: string;
+  impliedProbabilities?: {
+    home: number;
+    draw: number;
+    away: number;
+    margin: number;
+  };
+}
+
+export interface BookmakerPrice {
+  name: string;
+  home: number;
+  draw: number;
+  away: number;
+  lastUpdate?: string;
+}
+
+export interface DetailedMarketOdds {
+  matchId: string;
+  sportKey: string;
+  sportTitle: string;
+  source: string;
+  isLive: boolean;
+  bookmakerCount: number;
+  lastUpdate: string;
+  odds: {
+    home: number;
+    draw: number;
+    away: number;
+  };
+  bestOdds?: {
+    home: { price: number; bookmaker: string };
+    draw: { price: number; bookmaker: string };
+    away: { price: number; bookmaker: string };
+  };
+  sampleBookmakers?: BookmakerPrice[];
+  impliedProbabilities: {
+    rawHome: number;
+    rawDraw: number;
+    rawAway: number;
+    totalVig: number;
+    margin: number;
+    home: number;
+    draw: number;
+    away: number;
+  };
+  comparison?: {
+    modelProbHome: number;
+    modelProbDraw: number;
+    modelProbAway: number;
+    edgeHome: number;
+    edgeDraw: number;
+    edgeAway: number;
+    bestValueSelection: 'HOME' | 'DRAW' | 'AWAY' | 'NONE';
+    bestValueEdge: number;
+    explanation: string;
+  };
 }
 
 export interface MatchSource {
@@ -163,6 +219,10 @@ export interface AIAnalysisOutput {
   tacticalOverview: string;
   isAiGenerated: boolean;
   modelUsed: string;
+  liveNewsSummary?: string;
+  marketConsensus?: string;
+  searchSources?: { title: string; uri: string }[];
+  breakingNewsPoints?: string[];
 }
 
 export interface PredictionTimelineEntry {
@@ -290,3 +350,48 @@ export interface IFootballDataProvider {
   getInjuries(teamId: string): Promise<PlayerInjury[]>;
   checkHealth(): Promise<DataProviderHealth>;
 }
+
+export interface LiveMatchAnalysisResult {
+  query: string;
+  homeTeam: string;
+  awayTeam: string;
+  competition: string;
+  matchDate: string;
+  venue?: string;
+  status: string; // 'SCHEDULED' | 'FINISHED' | 'LIVE' | 'UPCOMING'
+  probabilities: {
+    home: number;
+    draw: number;
+    away: number;
+  };
+  expectedGoals: {
+    home: number;
+    away: number;
+    total: number;
+  };
+  topScores: { score: string; probability: number }[];
+  marketOdds: {
+    home: number;
+    draw: number;
+    away: number;
+    bookmakersFound?: string;
+  };
+  overUnder25: {
+    over: number;
+    under: number;
+  };
+  btts: {
+    yes: number;
+    no: number;
+  };
+  verdict: string;
+  signalStrength: 'STRONG' | 'MODERATE' | 'WEAK' | 'UNCERTAIN';
+  favorsHome: string[];
+  favorsAway: string[];
+  risksAndUncertainties: string[];
+  breakingNews: string[];
+  sources: { title: string; uri: string }[];
+  isLiveSearched: boolean;
+  analyzedAt: string;
+}
+

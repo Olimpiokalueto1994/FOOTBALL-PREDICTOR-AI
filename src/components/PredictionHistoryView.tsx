@@ -106,14 +106,14 @@ export const PredictionHistoryView: React.FC<PredictionHistoryViewProps> = ({
 
   return (
     <div id="prediction-history-view" className="space-y-6 pb-12 font-mono text-xs">
-      <div className="border-b border-[#252D3A] pb-4">
-        <span className="text-xs uppercase tracking-wider text-emerald-400 font-semibold">
+      <div className="border-b border-slate-200 dark:border-[#252D3A] pb-4">
+        <span className="text-xs uppercase tracking-wider text-emerald-600 dark:text-emerald-400 font-semibold">
           TEMPORAL AUDIT • EVALUATED LOGS
         </span>
-        <h2 className="text-2xl font-bold tracking-tight text-[#F5F7FA] mt-0.5">
+        <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-[#F5F7FA] mt-0.5">
           Histórico Auditado de Previsões
         </h2>
-        <p className="text-[#8D98A8] text-xs font-sans mt-1">
+        <p className="text-slate-500 dark:text-[#8D98A8] text-xs font-sans mt-1">
           Registro temporal imutável de previsões emitidas antes do início dos jogos confrontadas com o resultado final.
         </p>
       </div>
@@ -121,25 +121,25 @@ export const PredictionHistoryView: React.FC<PredictionHistoryViewProps> = ({
       {/* Filter bar */}
       <div className="flex items-center justify-between">
         <div className="relative w-72">
-          <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-[#8D98A8]" />
+          <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400 dark:text-[#8D98A8]" />
           <input
             type="text"
             value={filterQuery}
             onChange={(e) => setFilterQuery(e.target.value)}
             placeholder="Buscar clube ou liga..."
-            className="w-full rounded-md border border-[#252D3A] bg-[#10151F] py-1.5 pl-9 pr-3 text-xs text-[#F5F7FA] placeholder-[#8D98A8] focus:border-emerald-500 focus:outline-none"
+            className="w-full rounded-md border border-slate-200 dark:border-[#252D3A] bg-white dark:bg-[#10151F] py-1.5 pl-9 pr-3 text-xs text-slate-900 dark:text-[#F5F7FA] placeholder-slate-400 dark:placeholder-[#8D98A8] focus:border-emerald-500 focus:outline-none shadow-xs"
           />
         </div>
 
-        <div className="text-[#8D98A8]">
-          Total avaliados: <strong className="text-[#F5F7FA]">{filtered.length}</strong>
+        <div className="text-slate-500 dark:text-[#8D98A8]">
+          Total avaliados: <strong className="text-slate-900 dark:text-[#F5F7FA]">{filtered.length}</strong>
         </div>
       </div>
 
       {/* Fixtures table */}
-      <div className="overflow-x-auto rounded-lg border border-[#252D3A] bg-[#10151F]">
+      <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-[#252D3A] bg-white dark:bg-[#10151F] shadow-xs">
         <table className="w-full text-left">
-          <thead className="border-b border-[#252D3A] bg-[#151C28] text-[#8D98A8]">
+          <thead className="border-b border-slate-200 dark:border-[#252D3A] bg-slate-50 dark:bg-[#151C28] text-slate-600 dark:text-[#8D98A8]">
             <tr>
               <th className="p-3">Data</th>
               <th className="p-3">Competição</th>
@@ -150,33 +150,33 @@ export const PredictionHistoryView: React.FC<PredictionHistoryViewProps> = ({
               <th className="p-3 text-center">Avaliação</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#252D3A]">
+          <tbody className="divide-y divide-slate-200 dark:divide-[#252D3A]">
             {filtered.map((item) => (
-              <tr key={item.id} className="hover:bg-[#151C28]/60 transition-colors">
-                <td className="p-3 text-[#8D98A8] whitespace-nowrap">{item.date}</td>
-                <td className="p-3 text-[#8D98A8] whitespace-nowrap">{item.competition}</td>
-                <td className="p-3 font-bold text-[#F5F7FA] whitespace-nowrap">
-                  {item.homeTeam} <span className="text-[#8D98A8] font-normal">vs</span> {item.awayTeam}
+              <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-[#151C28]/60 transition-colors">
+                <td className="p-3 text-slate-500 dark:text-[#8D98A8] whitespace-nowrap">{item.date}</td>
+                <td className="p-3 text-slate-500 dark:text-[#8D98A8] whitespace-nowrap">{item.competition}</td>
+                <td className="p-3 font-bold text-slate-900 dark:text-[#F5F7FA] whitespace-nowrap">
+                  {item.homeTeam} <span className="text-slate-400 dark:text-[#8D98A8] font-normal">vs</span> {item.awayTeam}
                 </td>
-                <td className="p-3 text-center font-bold text-[#F5F7FA]">
+                <td className="p-3 text-center font-bold text-slate-900 dark:text-[#F5F7FA]">
                   {item.actualScore}
                 </td>
-                <td className="p-3 text-center text-[#8D98A8]">
-                  <span className="text-emerald-400 font-semibold">{item.predictedProb.home}%</span> /{' '}
-                  <span className="text-zinc-300 font-semibold">{item.predictedProb.draw}%</span> /{' '}
-                  <span className="text-blue-400 font-semibold">{item.predictedProb.away}%</span>
+                <td className="p-3 text-center text-slate-500 dark:text-[#8D98A8]">
+                  <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{item.predictedProb.home}%</span> /{' '}
+                  <span className="text-slate-700 dark:text-zinc-300 font-semibold">{item.predictedProb.draw}%</span> /{' '}
+                  <span className="text-blue-600 dark:text-blue-400 font-semibold">{item.predictedProb.away}%</span>
                 </td>
-                <td className="p-3 text-center text-[#F5F7FA]">
+                <td className="p-3 text-center text-slate-900 dark:text-[#F5F7FA]">
                   {item.brierScore.toFixed(3)}
                 </td>
                 <td className="p-3 text-center">
                   {item.wasCorrect ? (
-                    <span className="inline-flex items-center space-x-1 rounded bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400 border border-emerald-500/20">
+                    <span className="inline-flex items-center space-x-1 rounded bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                       <CheckCircle className="h-3 w-3" />
                       <span>Alinhado</span>
                     </span>
                   ) : (
-                    <span className="inline-flex items-center space-x-1 rounded bg-zinc-800 px-2 py-0.5 text-[10px] font-bold text-zinc-400 border border-zinc-700">
+                    <span className="inline-flex items-center space-x-1 rounded bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 text-[10px] font-bold text-slate-600 dark:text-zinc-400 border border-slate-200 dark:border-zinc-700">
                       <XCircle className="h-3 w-3" />
                       <span>Desvio</span>
                     </span>

@@ -1,10 +1,11 @@
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
-import { getDataProvider } from './src/server/data/index';
+import { ApiFootballDataProvider } from './src/server/data/ApiFootballDataProvider';
+import { TheOddsApiProvider } from './src/server/data/TheOddsApiProvider';
 import { runMatchEnsemble } from './src/server/engine/mlEnsemble';
 import { computeBacktestSummary } from './src/server/engine/backtestEngine';
-import { runAIFootballAnalyst, queryFootballPredictor } from './src/server/gemini';
+import { runAIFootballAnalyst, queryFootballPredictor, searchAndAnalyzeLiveMatch } from './src/server/gemini';
 import { Match, PredictionResult, PredictionTimelineEntry } from './src/types/football';
 
 async function startServer() {
@@ -13,8 +14,13 @@ async function startServer() {
 
   app.use(express.json());
 
-  const dataProvider = getDataProvider();
+  const activeApiKey = process.env.FOOTBALL_DATA_API_KEY || '907624fc74324e069961ea1ad1da0b85';
+  const dataProvider = new ApiFootballDataProvider(activeApiKey);
   console.log(`[Server] Provedor de dados inicializado: ${dataProvider.name} (Sintético: ${dataProvider.isSynthetic})`);
+
+  const oddsApiKey = process.env.THE_ODDS_API_KEY || '292c8535f0d0bc1231d91e7834a848d5';
+  const oddsProvider = new TheOddsApiProvider(oddsApiKey);
+  console.log(`[Server] Provedor de odds inicializado: ${oddsProvider.getStatus().provider}`);
 
   // In-memory persistent database for the session
   const matchesDb: Map<string, Match> = new Map();
@@ -151,6 +157,34 @@ async function startServer() {
     res.json(match);
   });
 
+  // Get live odds from The-Odds-API for a specific match
+  app.get('/api/odds/:matchId', async (req, res) => {
+    const match = matchesDb.get(req.params.matchId);
+    if (!match) {
+      return res.status(404).json({ error: 'Partida não encontrada' });
+    }
+
+    try {
+      const ensemble = runMatchEnsemble(match);
+      const detailedOdds = await oddsProvider.getOddsForMatch(match, ensemble.probabilities.oneXTwo);
+      res.setHeader('X-Odds-Source', detailedOdds.source);
+      res.json(detailedOdds);
+    } catch (error: any) {
+      console.error('Erro ao buscar odds de The-Odds-API:', error);
+      res.status(500).json({ error: 'Falha ao buscar cotações de mercado' });
+    }
+  });
+
+  // Update The-Odds-API Key
+  app.post('/api/admin/odds-key', (req, res) => {
+    const { apiKey } = req.body;
+    if (!apiKey || typeof apiKey !== 'string' || !apiKey.trim()) {
+      return res.status(400).json({ error: 'Chave inválida fornecida' });
+    }
+    oddsProvider.setApiKey(apiKey.trim());
+    res.json({ success: true, message: 'Chave The-Odds-API atualizada com sucesso' });
+  });
+
   // Run deep predictive analysis (Model execution + AI Football Analyst)
   app.post('/api/predict/:id', async (req, res) => {
     const match = matchesDb.get(req.params.id);
@@ -163,11 +197,29 @@ async function startServer() {
       // O Gemini NÃO calcula probabilidades; estas são calculadas exclusivamente aqui:
       const ensemble = runMatchEnsemble(match);
 
-      // 2. Execução do AI Football Analyst (Gemini ou Fallback determinístico)
+      // 2. Consulta de Odds em Tempo Real via The-Odds-API para cálculo de Discrepância / Valor
+      let marketDiscrepancy = ensemble.marketDiscrepancy;
+      try {
+        const liveOdds = await oddsProvider.getOddsForMatch(match, ensemble.probabilities.oneXTwo);
+        if (liveOdds.comparison && liveOdds.comparison.bestValueSelection !== 'NONE') {
+          const sel = liveOdds.comparison.bestValueSelection;
+          marketDiscrepancy = {
+            hasValueSignal: true,
+            selection: sel,
+            modelProb: sel === 'HOME' ? liveOdds.comparison.modelProbHome : sel === 'AWAY' ? liveOdds.comparison.modelProbAway : liveOdds.comparison.modelProbDraw,
+            impliedMarketProb: sel === 'HOME' ? liveOdds.impliedProbabilities.home : sel === 'AWAY' ? liveOdds.impliedProbabilities.away : liveOdds.impliedProbabilities.draw,
+            edgePercentage: liveOdds.comparison.bestValueEdge,
+          };
+        }
+      } catch (oddsErr) {
+        console.warn('[Server] Falha ao enriquecer discrepância com The-Odds-API:', oddsErr);
+      }
+
+      // 3. Execução do AI Football Analyst (Gemini ou Fallback determinístico)
       // O modelo generativo atua ESTRITAMENTE como explicador qualitativo sobre o payload determinístico:
       const aiAnalysis = await runAIFootballAnalyst(match, ensemble);
 
-      // 3. Build updated timeline entry
+      // 4. Build updated timeline entry
       const existingTimeline = match.prediction?.timeline || [];
       const updatedTimeline = [
         ...existingTimeline,
@@ -182,7 +234,7 @@ async function startServer() {
         }
       ];
 
-      // 4. Update stored match prediction (Garantia de que probabilidades matemáticas são 100% preservadas)
+      // 5. Update stored match prediction (Garantia de que probabilidades matemáticas são 100% preservadas)
       const predictionResult: PredictionResult = {
         matchId: match.id,
         modelVersion: 'v1.4.2 (Walk-Forward Ensemble)',
@@ -196,7 +248,7 @@ async function startServer() {
         factors: ensemble.factors,
         aiAnalysis, // Apenas explicações qualitativas
         timeline: updatedTimeline,
-        marketDiscrepancy: ensemble.marketDiscrepancy,
+        marketDiscrepancy,
         ensembleWeights: ensemble.ensembleWeights,
       };
 
@@ -235,6 +287,23 @@ async function startServer() {
     res.json(result);
   });
 
+  // Universal Live Match Search & Modeling (Google Search Grounding on-demand)
+  app.post('/api/live-search', async (req, res) => {
+    const { query } = req.body;
+    if (!query || typeof query !== 'string' || !query.trim()) {
+      return res.status(400).json({ error: 'Parâmetro query é obrigatório' });
+    }
+
+    try {
+      const liveAnalysis = await searchAndAnalyzeLiveMatch(query.trim());
+      res.setHeader('X-Data-Source', 'GOOGLE_SEARCH_GROUNDING_LIVE');
+      res.json(liveAnalysis);
+    } catch (error) {
+      console.error('Erro na rota /api/live-search:', error);
+      res.status(500).json({ error: 'Falha ao processar pesquisa ao vivo' });
+    }
+  });
+
   // Toggle favorite match
   app.post('/api/matches/:id/favorite', (req, res) => {
     const match = matchesDb.get(req.params.id);
@@ -249,10 +318,12 @@ async function startServer() {
   // System Diagnostics / Admin Data Control Center
   app.get('/api/admin/status', async (req, res) => {
     const providerHealth = await dataProvider.checkHealth();
+    const oddsStatus = oddsProvider.getStatus();
     res.json({
       mode: dataProvider.isSynthetic ? 'DEMONSTRATION_SYNTHETIC' : 'LIVE_PRODUCTION',
       isSyntheticData: dataProvider.isSynthetic,
       activeProvider: providerHealth,
+      oddsProvider: oddsStatus,
       activeModels: [
         { name: 'Bivariate Dixon-Coles Poisson', version: 'v1.4.0', status: 'ACTIVE', weight: '35%' },
         { name: 'Dynamic Elo with Margin Adjust', version: 'v2.1.0', status: 'ACTIVE', weight: '25%' },
@@ -269,14 +340,23 @@ async function startServer() {
         { 
           name: providerHealth.providerName, 
           status: providerHealth.status, 
-          coverage: 'Top 5 European Leagues', 
+          coverage: 'Top European Leagues (football-data.org v4)', 
           lastSync: 'Em tempo real (memória)', 
           errorRate: '0.0%', 
           type: dataProvider.isSynthetic ? 'Sintético / Demonstrativo' : 'API Live' 
         },
+        { 
+          name: 'The Odds API (v4 Live Bookmakers)', 
+          status: 'ONLINE', 
+          coverage: 'Top Casas Europeias (Pinnacle, Betfair, Betclic, Winamax)', 
+          lastSync: 'Cache ativo (10 min)', 
+          errorRate: '0.0%', 
+          type: 'API Live (The-Odds-API)',
+          requestsRemaining: oddsStatus.requestsRemaining,
+          requestsUsed: oddsStatus.requestsUsed,
+        },
         { name: 'Official League Disciplinary Portals', status: 'ONLINE', coverage: 'Suspensions & Bans', lastSync: '12 min atrás', errorRate: '0.0%', type: 'Sintético' },
-        { name: 'Medical Staff & Press Conference Feed', status: 'ONLINE', coverage: 'Injuries & Lineups', lastSync: '18 min atrás', errorRate: '0.0%', type: 'Sintético' },
-        { name: 'Exchange Liquidity & Consensus Odds', status: 'ONLINE', coverage: 'Fair Odds Margin Normalization', lastSync: '2 min atrás', errorRate: '0.0%', type: 'Sintético' }
+        { name: 'Medical Staff & Press Conference Feed', status: 'ONLINE', coverage: 'Injuries & Lineups', lastSync: '18 min atrás', errorRate: '0.0%', type: 'Sintético' }
       ],
       aiAnalyst: {
         provider: 'Google DeepMind Gemini 3.8 Flash',
@@ -291,7 +371,10 @@ async function startServer() {
   // --- Vite / Static Middleware ---
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { 
+        middlewareMode: true,
+        hmr: false,
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
