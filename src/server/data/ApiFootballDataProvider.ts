@@ -284,6 +284,7 @@ export class ApiFootballDataProvider implements IFootballDataProvider {
       status,
       homeScore: raw.score?.fullTime?.home ?? (raw.score?.halfTime?.home ?? undefined),
       awayScore: raw.score?.fullTime?.away ?? (raw.score?.halfTime?.away ?? undefined),
+      minute: raw.minute !== undefined ? Number(raw.minute) : undefined,
       homeTeam,
       awayTeam,
       headToHead: h2h,

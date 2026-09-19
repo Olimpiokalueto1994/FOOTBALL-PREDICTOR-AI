@@ -59,6 +59,33 @@ export const MatchDetailView: React.FC<MatchDetailViewProps> = ({
     }
   };
 
+  const [liveSearchScore, setLiveSearchScore] = useState<{ home: number; away: number; minute?: number; status?: string } | null>(null);
+  const [isLiveSearching, setIsLiveSearching] = useState(false);
+
+  const handleCheckLiveWeb = async () => {
+    setIsLiveSearching(true);
+    setAnalysisError(null);
+    try {
+      const { searchLiveMatch } = await import('../services/api');
+      const result = await searchLiveMatch(`${match.homeTeam.name} vs ${match.awayTeam.name} placar atualizado de hoje ao vivo`);
+      if (result && result.liveScore) {
+        setLiveSearchScore({
+          home: result.liveScore.home,
+          away: result.liveScore.away,
+          minute: result.liveScore.minute,
+          status: result.status,
+        });
+      } else {
+        setAnalysisError('Placar ao vivo não encontrado na busca web ou o jogo ainda não iniciou.');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setAnalysisError('Falha ao consultar placar ao vivo via web: ' + (err.message || err));
+    } finally {
+      setIsLiveSearching(false);
+    }
+  };
+
   useEffect(() => {
     loadOdds();
   }, [match.id]);
@@ -147,6 +174,18 @@ export const MatchDetailView: React.FC<MatchDetailViewProps> = ({
             <span>Ver Metodologia</span>
           </button>
 
+          {/* Botão de Checagem de Placar Live via Web */}
+          {match.status !== 'FINISHED' && (
+            <button
+              onClick={handleCheckLiveWeb}
+              disabled={isLiveSearching}
+              className="flex items-center space-x-1.5 rounded-lg border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 px-3 py-1.5 text-xs font-mono font-semibold transition-colors shadow-xs animate-pulse"
+            >
+              <Globe className={`h-3.5 w-3.5 ${isLiveSearching ? 'animate-spin' : ''}`} />
+              <span>{isLiveSearching ? 'Buscando Live...' : 'Checar Placar Live via Web'}</span>
+            </button>
+          )}
+
           <button
             onClick={handleReanalyze}
             disabled={isAnalyzing}
@@ -172,9 +211,25 @@ export const MatchDetailView: React.FC<MatchDetailViewProps> = ({
               <span className="font-bold uppercase tracking-wider">{match.competition}</span>
               <span className="text-slate-300 dark:text-[#323E56]">•</span>
               <span className="text-slate-500 dark:text-[#8D98A8]">{match.round || 'Rodada Regular'}</span>
+              {(match.status === 'LIVE' || liveSearchScore) && (
+                <>
+                  <span className="text-slate-300 dark:text-[#323E56]">•</span>
+                  <span className="inline-flex items-center space-x-1 bg-red-500/10 text-red-600 dark:text-red-400 px-2 py-0.5 rounded border border-red-500/20 animate-pulse text-[10px] font-bold">
+                    🔴 AO VIVO {(match.minute || liveSearchScore?.minute) ? `${match.minute || liveSearchScore?.minute}'` : ''}
+                  </span>
+                </>
+              )}
             </div>
-            <h1 className="text-2xl font-extrabold text-slate-900 dark:text-[#F5F7FA] sm:text-3xl tracking-tight">
-              {match.homeTeam.name} <span className="text-slate-400 dark:text-[#5A667A] font-light">vs</span> {match.awayTeam.name}
+            <h1 className="text-2xl font-extrabold text-slate-900 dark:text-[#F5F7FA] sm:text-3xl tracking-tight flex items-center flex-wrap gap-2">
+              <span>{match.homeTeam.name}</span>
+              {(match.status === 'LIVE' || liveSearchScore) ? (
+                <span className="inline-flex items-center space-x-1 text-2xl font-black text-[#EF4444] dark:text-[#F87171] tracking-tight bg-red-50 dark:bg-red-950/30 px-3.5 py-1 rounded-xl border border-red-100 dark:border-red-900/40 animate-pulse">
+                  {liveSearchScore ? liveSearchScore.home : (match.homeScore ?? 0)} - {liveSearchScore ? liveSearchScore.away : (match.awayScore ?? 0)}
+                </span>
+              ) : (
+                <span className="text-slate-400 dark:text-[#5A667A] font-light">vs</span>
+              )}
+              <span>{match.awayTeam.name}</span>
             </h1>
             <div className="flex flex-wrap items-center gap-4 text-xs font-mono text-slate-500 dark:text-[#8D98A8] pt-1">
               <span className="flex items-center space-x-1.5">

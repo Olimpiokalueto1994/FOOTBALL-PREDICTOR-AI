@@ -394,6 +394,11 @@ export interface LiveMatchAnalysisResult {
   isLiveSearched: boolean;
   analyzedAt: string;
   isQuotaLimited?: boolean;
+  liveScore?: {
+    home: number;
+    away: number;
+    minute?: number;
+  };
 }
 
 export type BetMarketType = 

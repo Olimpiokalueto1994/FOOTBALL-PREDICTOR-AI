@@ -1,14 +1,79 @@
 import React from 'react';
-import { Match } from '../types/football';
+import { Match, TrackedBet } from '../types/football';
 import { TeamCrest } from './TeamCrest';
 import { Lightbulb, ArrowRight } from 'lucide-react';
 
 interface MatchCardProps {
   match: Match;
   onSelectMatch: (matchId: string) => void;
+  associatedBet?: TrackedBet;
 }
 
-export const MatchCard: React.FC<MatchCardProps> = ({ match, onSelectMatch }) => {
+export function evaluateLiveBetStatus(
+  marketChosen: string,
+  homeScore: number | undefined,
+  awayScore: number | undefined
+): 'WON' | 'LOST' | 'PENDING' {
+  if (homeScore === undefined || awayScore === undefined) return 'PENDING';
+  const scoreHome = Number(homeScore);
+  const scoreAway = Number(awayScore);
+  const totalGoals = scoreHome + scoreAway;
+  const normalized = marketChosen.trim().toUpperCase();
+
+  switch (normalized) {
+    case 'HOME':
+    case '1':
+    case 'VITÓRIA MANDANTE':
+    case 'CASA':
+      return scoreHome > scoreAway ? 'WON' : 'LOST';
+
+    case 'AWAY':
+    case '2':
+    case 'VITÓRIA VISITANTE':
+    case 'FORA':
+      return scoreAway > scoreHome ? 'WON' : 'LOST';
+
+    case 'DRAW':
+    case 'X':
+    case 'EMPATE':
+      return scoreHome === scoreAway ? 'WON' : 'LOST';
+
+    case 'OVER25':
+    case 'OVER 2.5':
+    case 'MAIS DE 2.5':
+    case 'MAIS DE 2.5 GOLS':
+      return totalGoals > 2.5 ? 'WON' : 'LOST';
+
+    case 'UNDER25':
+    case 'UNDER 2.5':
+    case 'MENOS DE 2.5':
+    case 'MENOS DE 2.5 GOLS':
+      return totalGoals < 2.5 ? 'WON' : 'LOST';
+
+    case 'BTTS':
+    case 'AMBAS MARCAM':
+    case 'AMBAS MARCAM SIM':
+    case 'BTTS_YES':
+      return (scoreHome > 0 && scoreAway > 0) ? 'WON' : 'LOST';
+
+    case 'BTTS_NO':
+    case 'AMBAS MARCAM NÃO':
+      return (scoreHome === 0 || scoreAway === 0) ? 'WON' : 'LOST';
+
+    default:
+      if (normalized.includes('OVER') || normalized.includes('MAIS DE')) {
+        const value = parseFloat(normalized.replace(/[^0-9.]/g, '')) || 2.5;
+        return totalGoals > value ? 'WON' : 'LOST';
+      }
+      if (normalized.includes('UNDER') || normalized.includes('MENOS DE')) {
+        const value = parseFloat(normalized.replace(/[^0-9.]/g, '')) || 2.5;
+        return totalGoals < value ? 'WON' : 'LOST';
+      }
+      return 'PENDING';
+  }
+}
+
+export const MatchCard: React.FC<MatchCardProps> = ({ match, onSelectMatch, associatedBet }) => {
   const prob = match.prediction?.probabilities?.oneXTwo || { home: 45, draw: 28, away: 27 };
 
   // Formatted match time
@@ -46,6 +111,47 @@ export const MatchCard: React.FC<MatchCardProps> = ({ match, onSelectMatch }) =>
     return '⚽';
   };
 
+  // Render dynamic live bet badge if associatedBet exists
+  const liveBetBadge = (() => {
+    if (!associatedBet) return null;
+    
+    const isLive = match.status === 'LIVE';
+    if (!isLive) {
+      return (
+        <div className="mt-1 mb-3 flex items-center justify-between rounded-xl bg-blue-50/60 dark:bg-blue-950/25 px-3 py-1.5 border border-blue-100/60 dark:border-blue-900/35">
+          <span className="text-[11px] font-semibold text-blue-800 dark:text-blue-300">
+            Palpite Ativo: <strong>{associatedBet.market_chosen}</strong>
+          </span>
+          <span className="text-[10px] font-mono font-bold text-blue-600 bg-blue-100/50 dark:bg-blue-900/40 px-2 py-0.5 rounded">
+            Pre-Live
+          </span>
+        </div>
+      );
+    }
+
+    const liveStatus = evaluateLiveBetStatus(associatedBet.market_chosen, match.homeScore, match.awayScore);
+    const isWinning = liveStatus === 'WON';
+
+    return (
+      <div className={`mt-1 mb-3 flex items-center justify-between rounded-xl px-3 py-2 border transition-all ${
+        isWinning 
+          ? 'bg-emerald-50/75 dark:bg-emerald-950/25 border-emerald-200/60 dark:border-emerald-800/35 text-emerald-800 dark:text-emerald-300' 
+          : 'bg-amber-50/70 dark:bg-amber-950/25 border-amber-200/60 dark:border-amber-800/35 text-amber-800 dark:text-amber-300'
+      }`}>
+        <span className="text-[11px] font-medium">
+          Palpite: <strong className="underline decoration-dotted">{associatedBet.market_chosen}</strong> ({associatedBet.odd})
+        </span>
+        <span className={`inline-flex items-center space-x-1 text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full ${
+          isWinning 
+            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 animate-pulse' 
+            : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+        }`}>
+          <span>{isWinning ? '🟢 Batendo' : '⚠️ Em Risco'}</span>
+        </span>
+      </div>
+    );
+  })();
+
   return (
     <div 
       id={`match-card-${match.id}`}
@@ -58,7 +164,13 @@ export const MatchCard: React.FC<MatchCardProps> = ({ match, onSelectMatch }) =>
             <span className="text-sm">{getLeagueIcon(match.competition)}</span>
             <span className="text-slate-700 dark:text-slate-300 font-semibold">{match.competition}</span>
           </div>
-          <span className="font-mono text-slate-400 dark:text-slate-500">{timeFormatted}</span>
+          {match.status === 'LIVE' ? (
+            <span className="inline-flex items-center space-x-1 bg-red-500/10 text-red-600 dark:text-red-400 px-2 py-0.5 rounded border border-red-500/20 animate-pulse text-[10px] font-bold">
+              🔴 AO VIVO {match.minute ? `(${match.minute}')` : ''}
+            </span>
+          ) : (
+            <span className="font-mono text-slate-400 dark:text-slate-500">{timeFormatted}</span>
+          )}
         </div>
 
         {/* Teams Visual Display: Crests + Names + VS */}
@@ -80,12 +192,20 @@ export const MatchCard: React.FC<MatchCardProps> = ({ match, onSelectMatch }) =>
             </span>
           </div>
 
-          {/* VS Divider */}
-          <div className="flex flex-col items-center justify-center">
-            <span className="text-xs font-mono font-bold tracking-widest text-slate-400 dark:text-slate-500">
-              VS
-            </span>
-          </div>
+          {/* VS Divider or Live Score */}
+          {match.status === 'LIVE' ? (
+            <div className="flex flex-col items-center justify-center space-y-1">
+              <span className="text-2xl font-black text-[#EF4444] dark:text-[#F87171] tracking-tight bg-red-50 dark:bg-red-950/30 px-3.5 py-1.5 rounded-xl border border-red-100 dark:border-red-900/40 animate-pulse">
+                {match.homeScore ?? 0} - {match.awayScore ?? 0}
+              </span>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center">
+              <span className="text-xs font-mono font-bold tracking-widest text-slate-400 dark:text-slate-500">
+                VS
+              </span>
+            </div>
+          )}
 
           {/* Away Team */}
           <div className="flex flex-col items-center text-center max-w-[120px] space-y-2">
@@ -101,6 +221,9 @@ export const MatchCard: React.FC<MatchCardProps> = ({ match, onSelectMatch }) =>
             </span>
           </div>
         </div>
+
+        {/* Live Bet Status Badge */}
+        {liveBetBadge}
 
         {/* Probabilities Row matching reference image */}
         <div className="grid grid-cols-3 gap-2 py-3 px-1 rounded-xl bg-slate-50/80 dark:bg-[#131C2E]/60 border border-slate-100 dark:border-slate-800/60">

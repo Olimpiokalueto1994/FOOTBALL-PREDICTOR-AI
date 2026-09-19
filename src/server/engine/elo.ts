@@ -10,7 +10,20 @@ export interface EloOutput {
   adjustedEloDiff: number; // Home Elo + 65 - Away Elo
 }
 
-export const DEFAULT_HOME_ELO_ADVANTAGE = 65;
+export const DEFAULT_HOME_ELO_ADVANTAGE = 25;
+
+/**
+ * Calculates dynamic home advantage based on Elo difference
+ */
+export function getDynamicHomeAdvantage(homeElo: number, awayElo: number): number {
+  let advantage = DEFAULT_HOME_ELO_ADVANTAGE;
+  // Se a diferença de Elo base entre o visitante e o mandante for superior a 150 pontos
+  // (grande disparidade técnica), a vantagem de campo é atenuada em 50%.
+  if (Math.abs(homeElo - awayElo) > 150) {
+    advantage *= 0.5;
+  }
+  return advantage;
+}
 
 /**
  * Predict match probabilities using Elo differential
@@ -18,9 +31,10 @@ export const DEFAULT_HOME_ELO_ADVANTAGE = 65;
 export function calculateEloProbabilities(
   homeElo: number,
   awayElo: number,
-  homeAdvantage: number = DEFAULT_HOME_ELO_ADVANTAGE
+  homeAdvantage?: number
 ): EloOutput {
-  const eloDiff = (homeElo + homeAdvantage) - awayElo;
+  const actualAdvantage = homeAdvantage !== undefined ? homeAdvantage : getDynamicHomeAdvantage(homeElo, awayElo);
+  const eloDiff = (homeElo + actualAdvantage) - awayElo;
 
   // Logistic win expectation for Home Win (not accounting for draw yet)
   const homeWinExp = 1 / (1 + Math.pow(10, -eloDiff / 400));

@@ -1,6 +1,6 @@
 import { Match, PredictionMarkets, ExplainabilityFactor, SignalStrength, ModelConfidence } from '../../types/football';
 import { calculatePoissonProbabilities, PoissonOutput } from './poisson';
-import { calculateEloProbabilities, EloOutput } from './elo';
+import { calculateEloProbabilities, EloOutput, getDynamicHomeAdvantage } from './elo';
 
 export interface EnsembleResult {
   probabilities: PredictionMarkets;
@@ -48,7 +48,7 @@ export function extractMatchFeatures(match: Match) {
   const xGNetDelta = homeXgDiff - awayXgDiff;
 
   // Elo delta
-  const eloDelta = (home.stats.eloRating + 65) - away.stats.eloRating;
+  const eloDelta = (home.stats.eloRating + getDynamicHomeAdvantage(home.stats.eloRating, away.stats.eloRating)) - away.stats.eloRating;
 
   // Squad availability impact (considering key injuries)
   const homeAvailability = home.lineup?.availabilityScore ?? 85;
@@ -167,7 +167,16 @@ export function runMatchEnsemble(match: Match): EnsembleResult {
     home.stats.attackingStrength,
     home.stats.defensiveStrength,
     away.stats.attackingStrength,
-    away.stats.defensiveStrength
+    away.stats.defensiveStrength,
+    1.48,
+    1.18,
+    1.0, // Eliminate arbitrary home bias factor
+    home.stats.homeRecord,
+    away.stats.awayRecord,
+    home.stats.played ? home.stats.xG / home.stats.played : 1.4,
+    home.stats.played ? home.stats.xGA / home.stats.played : 1.2,
+    away.stats.played ? away.stats.xG / away.stats.played : 1.4,
+    away.stats.played ? away.stats.xGA / away.stats.played : 1.2
   );
 
   // 2. Elo model

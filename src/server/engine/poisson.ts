@@ -64,11 +64,43 @@ export function calculatePoissonProbabilities(
   awayDefense: number, // e.g. 1.10
   leagueAvgHomeGoals: number = 1.48,
   leagueAvgAwayGoals: number = 1.18,
-  homeAdvantageFactor: number = 1.12
+  homeAdvantageFactor: number = 1.0, // Default to 1.0 (no home bias)
+  homeRecord?: { played: number; gf: number; ga: number },
+  awayRecord?: { played: number; gf: number; ga: number },
+  homeXgPerGame?: number,
+  homeXgAPerGame?: number,
+  awayXgPerGame?: number,
+  awayXgAPerGame?: number
 ): PoissonOutput {
-  // Estimated lambda (Home goals expected) and mu (Away goals expected)
-  const lambda = Math.max(0.3, homeAttack * awayDefense * leagueAvgHomeGoals * homeAdvantageFactor);
-  const mu = Math.max(0.2, awayAttack * homeDefense * leagueAvgAwayGoals);
+  // Base calculation with attack/defense ratings
+  let lambda = homeAttack * awayDefense * leagueAvgHomeGoals * homeAdvantageFactor;
+  let mu = awayAttack * homeDefense * leagueAvgAwayGoals;
+
+  // Se tivermos registros reais de desempenho Casa/Fora, refinamos dinamicamente (Dixon-Coles Recalibration)
+  if (homeRecord && homeRecord.played > 0 && awayRecord && awayRecord.played > 0) {
+    const homeGfReal = homeRecord.gf / homeRecord.played;
+    const homeGaReal = homeRecord.ga / homeRecord.played;
+    const awayGfReal = awayRecord.gf / awayRecord.played;
+    const awayGaReal = awayRecord.ga / awayRecord.played;
+
+    const homeXg = homeXgPerGame ?? homeGfReal;
+    const homeXgA = homeXgAPerGame ?? homeGaReal;
+    const awayXg = awayXgPerGame ?? awayGfReal;
+    const awayXgA = awayXgAPerGame ?? awayGaReal;
+
+    // lambda (Gols esperados do mandante em casa) = Média ponderada de gols marcados em casa + gols sofridos do rival fora + xG e xGA correspondentes
+    const attackPart = (homeGfReal + homeXg) / 2;
+    const defensePart = (awayGaReal + awayXgA) / 2;
+    lambda = (attackPart + defensePart) / 2;
+
+    // mu (Gols esperados do visitante fora) = Média ponderada de gols marcados fora do visitante + gols sofridos do mandante em casa
+    const awayAttackPart = (awayGfReal + awayXg) / 2;
+    const homeDefensePart = (homeGaReal + homeXgA) / 2;
+    mu = (awayAttackPart + homeDefensePart) / 2;
+  }
+
+  lambda = Math.max(0.3, lambda);
+  mu = Math.max(0.2, mu);
 
   const maxGoals = 7;
   const matrix: number[][] = [];

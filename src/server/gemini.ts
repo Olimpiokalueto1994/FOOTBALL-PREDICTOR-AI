@@ -35,10 +35,14 @@ function getGeminiClient(): GoogleGenAI | null {
 export function isRateLimitError(err: any): boolean {
   if (!err) return false;
   const status = err.status || err.code || err?.error?.code;
-  if (status === 429 || status === 'RESOURCE_EXHAUSTED') return true;
+  if (status === 429 || status === 503 || status === 500 || status === 'RESOURCE_EXHAUSTED' || status === 'UNAVAILABLE') return true;
   const str = (err.message || err.error?.message || String(err)).toLowerCase();
   return (
     str.includes('429') ||
+    str.includes('503') ||
+    str.includes('500') ||
+    str.includes('unavailable') ||
+    str.includes('high demand') ||
     str.includes('resource_exhausted') ||
     str.includes('quota') ||
     str.includes('rate-limit') ||
@@ -58,6 +62,95 @@ export function isGeminiInCooldown(): boolean {
 export function triggerGeminiCooldown(reason: string) {
   geminiRateLimitCooldownUntil = Date.now() + 60 * 1000;
   console.warn(`[Gemini RateLimit] ${reason} - Operando em modo de contingência analítica por 60s.`);
+}
+
+/**
+ * Executes a Gemini API call with automatic retries (exponential backoff) and model fallback.
+ * It tries 'gemini-3.8-flash' first, and falls back to 'gemini-3.1-flash-lite' if the main model is overloaded.
+ */
+export async function callGeminiWithRetryAndFallback(
+  prompt: string,
+  config: any,
+  useGrounding: boolean = false
+): Promise<any> {
+  const client = getGeminiClient();
+  if (!client) {
+    throw new Error('Gemini API client not initialized');
+  }
+
+  const modelsToTry = [
+    'gemini-3.8-flash',
+    'gemini-3.1-flash-lite',
+  ];
+
+  let lastError: any = null;
+
+  for (const model of modelsToTry) {
+    let retries = 3;
+    let delay = 1000; // 1s initial delay
+    let currentUseGrounding = useGrounding;
+
+    while (retries > 0) {
+      try {
+        console.log(`[Gemini Request] Tentando modelo ${model} (com busca: ${currentUseGrounding}, tentativas restantes: ${retries})`);
+        
+        const finalConfig = { ...config };
+        if (currentUseGrounding) {
+          finalConfig.tools = [{ googleSearch: {} }];
+        } else {
+          delete finalConfig.tools;
+        }
+
+        const response = await client.models.generateContent({
+          model,
+          contents: prompt,
+          config: finalConfig,
+        });
+
+        // Se deu sucesso, retorna imediatamente!
+        console.log(`[Gemini Success] Requisição respondida com sucesso pelo modelo ${model}`);
+        return response;
+      } catch (err: any) {
+        lastError = err;
+        const status = err.status || err.code || err?.error?.code;
+        const errMsg = (err.message || err?.error?.message || String(err)).toLowerCase();
+        
+        console.warn(`[Gemini Error] Modelo ${model} falhou (Status: ${status}). Erro: ${err.message || err}`);
+
+        // Se o erro foi especificamente por causa de limites de grounding/busca do Google,
+        // desativamos o grounding e tentamos novamente com o mesmo modelo imediatamente.
+        if (currentUseGrounding && (status === 429 || errMsg.includes('quota') || errMsg.includes('search') || errMsg.includes('grounding'))) {
+          console.warn(`[Gemini Grounding Error] Desativando busca e tentando novamente sem grounding para o modelo ${model}`);
+          currentUseGrounding = false;
+          continue; // Tenta o mesmo modelo sem grounding
+        }
+
+        const isRetryable = 
+          status === 429 || 
+          status === 503 || 
+          status === 500 ||
+          errMsg.includes('503') ||
+          errMsg.includes('500') ||
+          errMsg.includes('limit') ||
+          errMsg.includes('quota') ||
+          errMsg.includes('demand') ||
+          errMsg.includes('unavailable') ||
+          errMsg.includes('temporary');
+
+        if (isRetryable && retries > 1) {
+          retries--;
+          console.log(`[Gemini Retry] Erro temporário detectado. Aguardando ${delay}ms para retentar...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          delay *= 2; // backoff exponencial
+        } else {
+          // Passa para o próximo modelo na cadeia
+          break;
+        }
+      }
+    }
+  }
+
+  throw lastError;
 }
 
 /**
@@ -139,6 +232,17 @@ export async function runAIFootballAnalyst(
     return fallback;
   }
 
+  const homeAudits = appDb.getRecentAuditsForTeam(match.homeTeam.name, 3);
+  const awayAudits = appDb.getRecentAuditsForTeam(match.awayTeam.name, 3);
+
+  const homeAuditsText = homeAudits.length > 0 
+    ? homeAudits.map(a => `- Partida: ${a.match_title} | Palpite: ${a.market_chosen} (Odd: ${a.odd}) | Resultado: ${a.status} (Placar: ${a.score_home}-${a.score_away})`).join('\n')
+    : 'Nenhuma auditoria recente registrada.';
+
+  const awayAuditsText = awayAudits.length > 0
+    ? awayAudits.map(a => `- Partida: ${a.match_title} | Palpite: ${a.market_chosen} (Odd: ${a.odd}) | Resultado: ${a.status} (Placar: ${a.score_home}-${a.score_away})`).join('\n')
+    : 'Nenhuma auditoria recente registrada.';
+
   const prompt = `Você é o AI Football Analyst em tempo real do "Football Predictor AI".
 Use a ferramenta Google Search para pesquisar informações públicas e de última hora na web sobre este confronto específico:
 - Notícias de hoje e últimas 48h
@@ -154,6 +258,15 @@ Probabilidades Matemáticas Pré-calculadas pelo Ensemble Determinístico:
 - Empate: ${ensemble.probabilities.oneXTwo.draw}%
 - Visitante (${match.awayTeam.shortName}): ${ensemble.probabilities.oneXTwo.away}%
 - Placar mais cotado: ${ensemble.probabilities.topScores.slice(0, 3).map(s => `${s.score} (${s.probability}%)`).join(', ')}
+
+DADOS HISTÓRICOS DE AUDITORIA & MEMÓRIA DE CONTEXTO (SQLite):
+Últimas 3 auditorias de palpites para o mandante (${match.homeTeam.name}):
+${homeAuditsText}
+
+Últimas 3 auditorias de palpites para o visitante (${match.awayTeam.name}):
+${awayAuditsText}
+
+Instrução de In-Context Memory (Memória de Aprendizado): Considere atentamente estes resultados históricos de palpites no SQLite. Se nas últimas análises este clube não confirmou o favoritismo devido a gols sofridos em transições defensivas ou outras falhas/sucessos recorrentes relatados nas auditorias, use isso para enriquecer seu veredicto e alertar o usuário.
 
 IMPORTANTE:
 Consulte a web pelo Google Search agora sobre "${match.homeTeam.name} vs ${match.awayTeam.name} noticias escalação desfalques".
@@ -171,30 +284,7 @@ Retorne sua resposta ESTRITAMENTE em formato JSON (dentro de um bloco \`\`\`json
 }`;
 
   try {
-    let response;
-    try {
-      response = await client.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: prompt,
-        config: {
-          tools: [{ googleSearch: {} }],
-          temperature: 0.2,
-        },
-      });
-    } catch (groundingError: any) {
-      if (isRateLimitError(groundingError)) {
-        // Tentativa de fallback sem Google Search tool para contornar cota isolada de busca
-        response = await client.models.generateContent({
-          model: 'gemini-3.8-flash',
-          contents: prompt,
-          config: {
-            temperature: 0.2,
-          },
-        });
-      } else {
-        throw groundingError;
-      }
-    }
+    const response = await callGeminiWithRetryAndFallback(prompt, { temperature: 0.2 }, true);
 
     const text = response.text || '';
     let parsed: any = {};
@@ -233,7 +323,7 @@ Retorne sua resposta ESTRITAMENTE em formato JSON (dentro de um bloco \`\`\`json
       breakingNewsPoints: parsed.breakingNewsPoints || ['Escalações finais com confirmação 1h antes do pontapé inicial.'],
       searchSources: searchSources.slice(0, 4),
       isAiGenerated: true,
-      modelUsed: 'Google Gemini 3.8 Flash (Google Search Live Grounding)',
+      modelUsed: 'Google Gemini (Resilient Live Grounding Engine)',
     };
   } catch (error: any) {
     if (isRateLimitError(error)) {
@@ -300,29 +390,7 @@ CONSULTA DO USUÁRIO:
 Responda em 1 a 3 parágrafos objetivos em português. Destaque probabilidades estimadas, placares cotados e pontos de atenção.`;
 
   try {
-    let response;
-    try {
-      response = await client.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: prompt,
-        config: {
-          tools: [{ googleSearch: {} }],
-          temperature: 0.3,
-        },
-      });
-    } catch (groundingError: any) {
-      if (isRateLimitError(groundingError)) {
-        response = await client.models.generateContent({
-          model: 'gemini-3.8-flash',
-          contents: prompt,
-          config: {
-            temperature: 0.3,
-          },
-        });
-      } else {
-        throw groundingError;
-      }
-    }
+    const response = await callGeminiWithRetryAndFallback(prompt, { temperature: 0.3 }, true);
 
     const searchSources: { title: string; uri: string }[] = [];
     const chunks = (response.candidates?.[0] as any)?.groundingMetadata?.groundingChunks;
@@ -953,7 +1021,8 @@ USE A FERRAMENTA GOOGLE SEARCH PARA PESQUISAR AGORA NA WEB:
 1. Identifique as duas equipes que vão se enfrentar (ou que se enfrentaram recentemente), a liga/torneio (ex: Girabola, Premier League, UEFA Champions League, La Liga, Brasileirão, Libertadores, etc.), data/hora da partida e estádio.
 2. Busque as cotações médias e odds das casas de apostas públicas (ex: PremierBet, ElephantBet, Bet365, Betano, 1xBet). Se for um jogo sem odds internacionais listadas no momento, estime odds justas com base no histórico dos times.
 3. Busque os desfalques confirmados (lesões, suspensões), prováveis escalações e notícias recentes das últimas 24-48 horas.
-4. Calcule probabilidades estimadas consistentes:
+4. Identifique se o jogo já começou ou se já terminou. Se estiver em andamento (LIVE) ou finalizado (FINISHED), encontre o placar real atual e o minuto do jogo.
+5. Calcule probabilidades estimadas consistentes:
    - home (vitória mandante %), draw (empate %), away (vitória visitante %), cuja soma seja EXATAMENTE 100%.
    - expectedGoals: gols esperados do mandante (home xG), visitante (away xG) e total.
    - topScores: os 3 placares exatos mais prováveis com seus percentuais (ex: [{"score": "2-1", "probability": 15}]).
@@ -973,6 +1042,7 @@ RETORNE SUA RESPOSTA ESTRITAMENTE EM JSON VÁLIDO no seguinte formato (sem texto
   "matchDate": "Data/Hora ou Status (ex: Hoje 20:00, ou 19/09 16:00)",
   "venue": "Nome do Estádio e Cidade",
   "status": "SCHEDULED",
+  "liveScore": { "home": 2, "away": 1, "minute": 68 },
   "probabilities": {
     "home": 48,
     "draw": 27,
@@ -1011,30 +1081,7 @@ RETORNE SUA RESPOSTA ESTRITAMENTE EM JSON VÁLIDO no seguinte formato (sem texto
 }`;
 
   try {
-    let response;
-    try {
-      response = await client.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: prompt,
-        config: {
-          tools: [{ googleSearch: {} }],
-          temperature: 0.2,
-        },
-      });
-    } catch (groundingError: any) {
-      if (isRateLimitError(groundingError)) {
-        console.warn('[Gemini Search] Cota do Google Search tool atingida. Tentando com modelo direto...');
-        response = await client.models.generateContent({
-          model: 'gemini-3.8-flash',
-          contents: prompt,
-          config: {
-            temperature: 0.2,
-          },
-        });
-      } else {
-        throw groundingError;
-      }
-    }
+    const response = await callGeminiWithRetryAndFallback(prompt, { temperature: 0.2 }, true);
 
     const searchSources: { title: string; uri: string }[] = [];
     const chunks = (response.candidates?.[0] as any)?.groundingMetadata?.groundingChunks;
@@ -1135,6 +1182,11 @@ RETORNE SUA RESPOSTA ESTRITAMENTE EM JSON VÁLIDO no seguinte formato (sem texto
       isLiveSearched: true,
       analyzedAt: timestamp,
       isQuotaLimited: false,
+      liveScore: parsed.liveScore ? {
+        home: Number(parsed.liveScore.home),
+        away: Number(parsed.liveScore.away),
+        minute: parsed.liveScore.minute !== undefined ? Number(parsed.liveScore.minute) : undefined,
+      } : undefined,
     };
 
     // Salva no cache com TTL de 60 minutos (3600 segundos)

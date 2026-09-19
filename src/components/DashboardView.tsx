@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from 'react';
-import { Match } from '../types/football';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Match, TrackedBet } from '../types/football';
 import { MatchCard } from './MatchCard';
 import { DashboardRightPanel } from './DashboardRightPanel';
+import { getBets } from '../services/api';
 import { 
   Calendar, 
   Target, 
@@ -41,6 +42,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [selectedLeague, setSelectedLeague] = useState<string>('ALL');
   const [selectedDateFilter, setSelectedDateFilter] = useState<string>('today');
   const [selectedBetType, setSelectedBetType] = useState<string>('all');
+  const [userBets, setUserBets] = useState<TrackedBet[]>([]);
+
+  useEffect(() => {
+    getBets().then(({ bets }) => {
+      setUserBets(bets || []);
+    }).catch(err => {
+      console.warn('Erro ao carregar apostas no dashboard:', err);
+    });
+  }, []);
 
   // Today's formatted date string matching "Quarta, 19 de Setembro de 2026"
   const formattedDate = 'Quarta, 19 de Setembro de 2026';
@@ -293,13 +303,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredMatches.map((match) => (
-                <MatchCard 
-                  key={match.id} 
-                  match={match} 
-                  onSelectMatch={onSelectMatch} 
-                />
-              ))}
+              {filteredMatches.map((match) => {
+                const associatedBet = userBets.find(b => b.match_id === match.id);
+                return (
+                  <MatchCard 
+                    key={match.id} 
+                    match={match} 
+                    onSelectMatch={onSelectMatch} 
+                    associatedBet={associatedBet}
+                  />
+                );
+              })}
             </div>
           )}
         </div>

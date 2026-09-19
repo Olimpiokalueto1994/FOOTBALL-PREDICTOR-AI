@@ -92,6 +92,17 @@ class AppDatabase {
         expires_at INTEGER NOT NULL
       );
     `);
+
+    // 4. Tabela team_ratings (para aprendizado dinâmico do rating Elo pós-jogo)
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS team_ratings (
+        team_id TEXT PRIMARY KEY,
+        team_name TEXT NOT NULL,
+        elo_rating INTEGER NOT NULL,
+        matches_played INTEGER NOT NULL DEFAULT 0,
+        last_updated TEXT NOT NULL
+      );
+    `);
   }
 
   private seedInitialDataIfEmpty(): void {
@@ -458,6 +469,67 @@ class AppDatabase {
     if (!this.db) return;
     this.db.run('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?);', [key, value]);
     this.persist();
+  }
+
+  // ==================== TEAM RATINGS (ELO APRENDIZADO CONTÍNUO) ====================
+
+  public getTeamRating(teamIdentifier: string): { elo: number; matchesPlayed: number } | null {
+    if (!this.db) return null;
+    try {
+      const stmt = this.db.prepare('SELECT elo_rating, matches_played FROM team_ratings WHERE team_id = ? OR team_name = ?;');
+      stmt.bind([teamIdentifier, teamIdentifier]);
+      if (stmt.step()) {
+        const row = stmt.getAsObject();
+        stmt.free();
+        return {
+          elo: Number(row.elo_rating),
+          matchesPlayed: Number(row.matches_played || 0)
+        };
+      }
+      stmt.free();
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  public saveTeamRating(teamId: string, teamName: string, eloRating: number): void {
+    if (!this.db) return;
+    try {
+      const existing = this.getTeamRating(teamId);
+      const matchesPlayed = (existing?.matchesPlayed || 0) + 1;
+      const now = new Date().toISOString();
+      this.db.run(`
+        INSERT OR REPLACE INTO team_ratings (team_id, team_name, elo_rating, matches_played, last_updated)
+        VALUES (?, ?, ?, ?, ?);
+      `, [teamId, teamName, Math.round(eloRating), matchesPlayed, now]);
+      this.persist();
+    } catch (err) {
+      console.error('[SQLite team_ratings] Erro ao salvar rating Elo:', err);
+    }
+  }
+
+  /**
+   * Retorna as últimas 3 auditorias (apostas liquidadas WON/LOST) envolvendo um determinado clube
+   * Fornece memória in-context para o analista Gemini
+   */
+  public getRecentAuditsForTeam(teamName: string, limit: number = 3): TrackedBet[] {
+    if (!this.db) return [];
+    try {
+      const allBets = this.getAllBets();
+      const settled = allBets.filter(b => b.status === 'WON' || b.status === 'LOST');
+      const cleanName = teamName.toLowerCase().replace(/fc|cf|sc|cr|se/g, '').trim();
+
+      const teamAudits = settled.filter(b => {
+        const title = b.match_title.toLowerCase();
+        return title.includes(cleanName) || (cleanName.length > 3 && title.includes(cleanName.substring(0, 4)));
+      });
+
+      return teamAudits.slice(0, limit);
+    } catch (err) {
+      console.error('[SQLite] Erro ao buscar auditorias recentes do time:', err);
+      return [];
+    }
   }
 
   // ==================== CACHE CRUD ====================

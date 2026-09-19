@@ -1,5 +1,6 @@
 import { appDb } from '../db/database';
 import { TrackedBet, BetStatus, SettleResponse, Match } from '../../types/football';
+import { updateEloRating } from './elo';
 
 /**
  * Avalia o resultado de um mercado esportivo dado o placar final.
@@ -186,6 +187,43 @@ export async function settlePendingBets(
         profit_loss: profitLoss,
         settled_at: settledAt,
       });
+
+      // Recalcular rating Elo após liquidação do jogo (FINISHED)
+      if (match) {
+        const homeTeam = match.homeTeam;
+        const awayTeam = match.awayTeam;
+        if (homeTeam && awayTeam) {
+          // Obter ratings atuais (consultando primeiro o histórico persistente no SQLite para aprendizado dinâmico contínuo)
+          const homePersisted = appDb.getTeamRating(homeTeam.id) || appDb.getTeamRating(homeTeam.name);
+          const awayPersisted = appDb.getTeamRating(awayTeam.id) || appDb.getTeamRating(awayTeam.name);
+
+          const homeElo = homePersisted ? homePersisted.elo : homeTeam.stats.eloRating;
+          const awayElo = awayPersisted ? awayPersisted.elo : awayTeam.stats.eloRating;
+
+          // Determinar resultados reais: 1 para vitória do mandante, 0.5 para empate, 0 para derrota
+          let homeOutcomeScore: 1 | 0.5 | 0 = 0.5;
+          let awayOutcomeScore: 1 | 0.5 | 0 = 0.5;
+          if (finalHomeScore > finalAwayScore) {
+            homeOutcomeScore = 1;
+            awayOutcomeScore = 0;
+          } else if (finalHomeScore < finalAwayScore) {
+            homeOutcomeScore = 0;
+            awayOutcomeScore = 1;
+          }
+
+          const goalDiff = finalHomeScore - finalAwayScore;
+
+          // Usando K-factor padrão de 32 para as atualizações de Elo
+          const newHomeElo = updateEloRating(homeElo, awayElo, homeOutcomeScore, goalDiff, 32);
+          const newAwayElo = updateEloRating(awayElo, homeElo, awayOutcomeScore, -goalDiff, 32);
+
+          // Salvar novos ratings no SQLite
+          appDb.saveTeamRating(homeTeam.id, homeTeam.name, newHomeElo);
+          appDb.saveTeamRating(awayTeam.id, awayTeam.name, newAwayElo);
+
+          console.log(`[Elo Learning Engine] Ajustado Elo de ${homeTeam.name}: ${homeElo} -> ${newHomeElo} | ${awayTeam.name}: ${awayElo} -> ${newAwayElo}`);
+        }
+      }
 
       const updatedBet = appDb.getBetById(bet.id);
       if (updatedBet) {
