@@ -11,11 +11,12 @@ import {
   ShieldCheck, 
   PanelLeftClose,
   PanelLeftOpen,
-  ChevronRight
+  ChevronRight,
+  Calculator
 } from 'lucide-react';
 import { Language, translations } from '../i18n/translations';
 
-export type NavTabId = 'matches' | 'search' | 'performance' | 'history' | 'admin' | 'leagues' | 'favorites';
+export type NavTabId = 'matches' | 'search' | 'validator' | 'performance' | 'history' | 'admin' | 'leagues' | 'favorites';
 
 interface SidebarProps {
   currentTab: NavTabId;
@@ -60,6 +61,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Jogos de Hoje',
       icon: CalendarDays,
       badge: todayMatchesCount,
+    },
+    {
+      id: 'validator',
+      label: 'Simular / Validar Aposta',
+      icon: Calculator,
+      badge: 'EV+',
     },
     {
       id: 'performance',

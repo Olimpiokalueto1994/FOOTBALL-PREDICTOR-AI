@@ -395,3 +395,66 @@ export interface LiveMatchAnalysisResult {
   analyzedAt: string;
 }
 
+export type BetMarketType = 
+  | 'HOME' 
+  | 'DRAW' 
+  | 'AWAY' 
+  | 'OVER_25' 
+  | 'UNDER_25' 
+  | 'BTTS_YES' 
+  | 'BTTS_NO' 
+  | 'DOUBLE_1X' 
+  | 'DOUBLE_X2' 
+  | 'DOUBLE_12' 
+  | 'CUSTOM';
+
+export interface BetValidationRequest {
+  matchQuery: string;
+  market: BetMarketType | string;
+  marketLabel?: string;
+  offeredOdd: number;
+  stake?: number;
+  manualProbability?: number;
+}
+
+export interface BetValidationResult {
+  matchQuery: string;
+  identifiedMatch: {
+    homeTeam: string;
+    awayTeam: string;
+    competition: string;
+    matchDate: string;
+    venue?: string;
+    isExistingDbMatch: boolean;
+    isLiveSearched: boolean;
+  };
+  market: {
+    key: string;
+    label: string;
+  };
+  offeredOdd: number;
+  stake: number;
+  impliedProbability: number; // (1 / odd) * 100
+  estimatedProbability: number; // 0-100%
+  estimatedProbabilityDecimal: number; // 0-1
+  expectedValue: number; // Unit EV: p * (odd - 1) - (1 - p)
+  expectedValuePercentage: number; // EV * 100
+  fairOdd: number; // 1 / p
+  minimumProfitableOdd: number; // break-even odd
+  edgePercentage: number; // ((offeredOdd / fairOdd) - 1) * 100
+  potentialReturn: number; // stake * offeredOdd
+  expectedProfit: number; // stake * expectedValue
+  isPositiveEV: boolean;
+  verdict: 'POSITIVE_VALUE' | 'NEGATIVE_VALUE';
+  verdictTitle: string; // "[VALOR POSITIVO / RECOMENDADO]" | "[VALOR NEGATIVO / RISCO ALTO]"
+  explanation: string;
+  sources?: { title: string; uri: string }[];
+  modelContext?: {
+    probabilities1X2: { home: number; draw: number; away: number };
+    expectedGoals?: { home: number; away: number; total: number };
+    overUnder25?: { over: number; under: number };
+    btts?: { yes: number; no: number };
+    breakingNews?: string[];
+  };
+}
+

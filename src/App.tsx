@@ -14,6 +14,7 @@ import { MatchDetailView } from './components/MatchDetailView';
 import { ModelPerformanceView } from './components/ModelPerformanceView';
 import { PredictionHistoryView } from './components/PredictionHistoryView';
 import { AdminControlView } from './components/AdminControlView';
+import { CustomBetValidator } from './components/CustomBetValidator';
 import { TransparencyModal } from './components/TransparencyModal';
 import { Language } from './i18n/translations';
 import { Loader2 } from 'lucide-react';
@@ -25,6 +26,7 @@ export default function App() {
 
   const [currentTab, setCurrentTab] = useState<NavTabId>('matches');
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
+  const [validatorSelectedMatch, setValidatorSelectedMatch] = useState<Match | null>(null);
   const [language, setLanguage] = useState<Language>('pt');
   const [isSyntheticData, setIsSyntheticData] = useState<boolean>(true);
   const [searchPrefill, setSearchPrefill] = useState<string>('');
@@ -135,6 +137,12 @@ export default function App() {
     setCurrentTab('search');
   };
 
+  const handleOpenValidatorWithMatch = (match: Match) => {
+    setValidatorSelectedMatch(match);
+    setSelectedMatchId(null);
+    setCurrentTab('validator');
+  };
+
   const selectedMatch = matches.find((m) => m.id === selectedMatchId);
 
   // Favorites subset
@@ -228,6 +236,7 @@ export default function App() {
                   language={language}
                   onOpenTransparencyModal={() => setIsTransparencyModalOpen(true)}
                   onUpdateMatchPrediction={handleUpdateMatchPrediction}
+                  onValidateBet={handleOpenValidatorWithMatch}
                 />
               ) : (
                 <>
@@ -265,6 +274,15 @@ export default function App() {
                       onSelectMatch={handleSelectMatch}
                       language={language}
                       initialQuery={searchPrefill}
+                    />
+                  )}
+
+                  {currentTab === 'validator' && (
+                    <CustomBetValidator
+                      matches={matches}
+                      language={language}
+                      initialMatch={validatorSelectedMatch}
+                      onSelectMatch={handleSelectMatch}
                     />
                   )}
 

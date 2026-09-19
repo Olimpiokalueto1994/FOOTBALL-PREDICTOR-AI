@@ -6,7 +6,14 @@ import { TheOddsApiProvider } from './src/server/data/TheOddsApiProvider';
 import { runMatchEnsemble } from './src/server/engine/mlEnsemble';
 import { computeBacktestSummary } from './src/server/engine/backtestEngine';
 import { runAIFootballAnalyst, queryFootballPredictor, searchAndAnalyzeLiveMatch } from './src/server/gemini';
-import { Match, PredictionResult, PredictionTimelineEntry } from './src/types/football';
+import { 
+  Match, 
+  PredictionResult, 
+  PredictionTimelineEntry,
+  BetValidationRequest,
+  BetValidationResult,
+  BetMarketType
+} from './src/types/football';
 
 async function startServer() {
   const app = express();
@@ -301,6 +308,282 @@ async function startServer() {
     } catch (error) {
       console.error('Erro na rota /api/live-search:', error);
       res.status(500).json({ error: 'Falha ao processar pesquisa ao vivo' });
+    }
+  });
+
+  // Custom Bet Validator & EV+ Calculator (with Live Web Search for any match)
+  app.post('/api/validate-bet', async (req, res) => {
+    try {
+      const { 
+        matchQuery, 
+        market = 'HOME', 
+        marketLabel, 
+        offeredOdd, 
+        stake = 100, 
+        manualProbability 
+      } = req.body;
+
+      if (!matchQuery || typeof matchQuery !== 'string' || !matchQuery.trim()) {
+        return res.status(400).json({ error: 'Partida ou confronto é obrigatório' });
+      }
+
+      const numOdd = parseFloat(offeredOdd);
+      if (isNaN(numOdd) || numOdd <= 1.0) {
+        return res.status(400).json({ error: 'Odd oferecida pela casa deve ser um número maior que 1.00' });
+      }
+
+      const numStake = isNaN(parseFloat(stake)) || parseFloat(stake) <= 0 ? 100 : parseFloat(stake);
+      const queryTrim = matchQuery.trim();
+
+      // 1. Procurar em matchesDb (por ID ou por correspondência de times)
+      let foundMatch: Match | undefined = matchesDb.get(queryTrim);
+
+      if (!foundMatch) {
+        const queryLower = queryTrim.toLowerCase();
+        foundMatch = Array.from(matchesDb.values()).find(m => {
+          const hName = m.homeTeam.name.toLowerCase();
+          const aName = m.awayTeam.name.toLowerCase();
+          const hShort = m.homeTeam.shortName.toLowerCase();
+          const aShort = m.awayTeam.shortName.toLowerCase();
+          return (
+            (queryLower.includes(hName) || queryLower.includes(hShort)) &&
+            (queryLower.includes(aName) || queryLower.includes(aShort))
+          );
+        });
+      }
+
+      let identifiedHome = '';
+      let identifiedAway = '';
+      let identifiedComp = '';
+      let identifiedDate = '';
+      let identifiedVenue = '';
+      let isExistingDb = false;
+      let isLiveSearched = false;
+      let sources: { title: string; uri: string }[] = [];
+
+      let probHome = 45;
+      let probDraw = 28;
+      let probAway = 27;
+      let over25Prob = 50;
+      let under25Prob = 50;
+      let bttsYesProb = 52;
+      let bttsNoProb = 48;
+      let xGHome = 1.4;
+      let xGAway = 1.1;
+      let breakingNews: string[] = [];
+
+      if (foundMatch) {
+        isExistingDb = true;
+        identifiedHome = foundMatch.homeTeam.name;
+        identifiedAway = foundMatch.awayTeam.name;
+        identifiedComp = foundMatch.competition;
+        identifiedDate = foundMatch.utcDate;
+        identifiedVenue = foundMatch.venue;
+
+        const ensemble = runMatchEnsemble(foundMatch);
+        probHome = ensemble.probabilities.oneXTwo.home;
+        probDraw = ensemble.probabilities.oneXTwo.draw;
+        probAway = ensemble.probabilities.oneXTwo.away;
+
+        // Estimação xG / Over-Under baseada no Poisson e nas estatísticas dos times
+        xGHome = foundMatch.homeTeam.stats?.xG || 1.45;
+        xGAway = foundMatch.awayTeam.stats?.xG || 1.15;
+        const totalXg = xGHome + xGAway;
+        // Poisson approximation para P(Total Gols > 2.5)
+        const lambda = Math.max(1.5, Math.min(4.5, totalXg));
+        const p0 = Math.exp(-lambda);
+        const p1 = lambda * p0;
+        const p2 = (lambda * lambda * 0.5) * p0;
+        const pUnder25 = Math.min(0.85, Math.max(0.15, p0 + p1 + p2));
+        over25Prob = Math.round((1 - pUnder25) * 1000) / 10;
+        under25Prob = Math.round(pUnder25 * 1000) / 10;
+
+        // BTTS approximation
+        const pHomeZero = Math.exp(-xGHome);
+        const pAwayZero = Math.exp(-xGAway);
+        const pBtts = Math.max(0.2, Math.min(0.8, (1 - pHomeZero) * (1 - pAwayZero) * 1.12));
+        bttsYesProb = Math.round(pBtts * 1000) / 10;
+        bttsNoProb = Math.round((1 - pBtts) * 1000) / 10;
+      } else {
+        // Confronto avulso fora da lista -> Executar Gemini com Google Search Grounding em tempo real
+        isLiveSearched = true;
+        const liveAnalysis = await searchAndAnalyzeLiveMatch(queryTrim);
+        identifiedHome = liveAnalysis.homeTeam || 'Time Mandante';
+        identifiedAway = liveAnalysis.awayTeam || 'Time Visitante';
+        identifiedComp = liveAnalysis.competition || 'Competição Nacional/Internacional';
+        identifiedDate = liveAnalysis.matchDate || new Date().toISOString();
+        identifiedVenue = liveAnalysis.venue || 'Estádio Principal';
+
+        probHome = liveAnalysis.probabilities?.home || 42;
+        probDraw = liveAnalysis.probabilities?.draw || 28;
+        probAway = liveAnalysis.probabilities?.away || 30;
+
+        over25Prob = liveAnalysis.overUnder25?.over || 50;
+        under25Prob = liveAnalysis.overUnder25?.under || 50;
+        bttsYesProb = liveAnalysis.btts?.yes || 50;
+        bttsNoProb = liveAnalysis.btts?.no || 50;
+
+        xGHome = liveAnalysis.expectedGoals?.home || 1.3;
+        xGAway = liveAnalysis.expectedGoals?.away || 1.1;
+
+        breakingNews = liveAnalysis.breakingNews || liveAnalysis.favorsHome || [];
+        sources = liveAnalysis.sources || [];
+      }
+
+      // 2. Determinar a Probabilidade Real Estimada do Mercado Escolhido
+      let estimatedProb = 50;
+      let defaultLabel = 'Mercado Personalizado';
+
+      const upperMarket = String(market).toUpperCase();
+
+      if (typeof manualProbability === 'number' && manualProbability > 0 && manualProbability < 100) {
+        estimatedProb = manualProbability;
+        defaultLabel = marketLabel || 'Probabilidade Customizada pelo Usuário';
+      } else {
+        switch (upperMarket) {
+          case 'HOME':
+          case 'VITÓRIA MANDANTE':
+          case '1':
+            estimatedProb = probHome;
+            defaultLabel = `Vitória do ${identifiedHome}`;
+            break;
+          case 'DRAW':
+          case 'EMPATE':
+          case 'X':
+            estimatedProb = probDraw;
+            defaultLabel = 'Empate (X)';
+            break;
+          case 'AWAY':
+          case 'VITÓRIA VISITANTE':
+          case '2':
+            estimatedProb = probAway;
+            defaultLabel = `Vitória do ${identifiedAway}`;
+            break;
+          case 'OVER_25':
+          case 'MAIS DE 2.5 GOLS':
+            estimatedProb = over25Prob;
+            defaultLabel = 'Mais de 2.5 Gols (Over)';
+            break;
+          case 'UNDER_25':
+          case 'MENOS DE 2.5 GOLS':
+            estimatedProb = under25Prob;
+            defaultLabel = 'Menos de 2.5 Gols (Under)';
+            break;
+          case 'BTTS_YES':
+          case 'AMBAS MARCAM':
+          case 'AMBAS MARCAM SIM':
+            estimatedProb = bttsYesProb;
+            defaultLabel = 'Ambas as Equipes Marcam (Sim)';
+            break;
+          case 'BTTS_NO':
+          case 'AMBAS NÃO MARCAM':
+            estimatedProb = bttsNoProb;
+            defaultLabel = 'Ambas as Equipes Marcam (Não)';
+            break;
+          case 'DOUBLE_1X':
+          case 'DUPLA CHANCE 1X':
+            estimatedProb = Math.min(96, Math.round((probHome + probDraw) * 10) / 10);
+            defaultLabel = `Dupla Chance: ${identifiedHome} ou Empate (1X)`;
+            break;
+          case 'DOUBLE_X2':
+          case 'DUPLA CHANCE X2':
+            estimatedProb = Math.min(96, Math.round((probDraw + probAway) * 10) / 10);
+            defaultLabel = `Dupla Chance: Empate ou ${identifiedAway} (X2)`;
+            break;
+          case 'DOUBLE_12':
+          case 'DUPLA CHANCE 12':
+            estimatedProb = Math.min(96, Math.round((probHome + probAway) * 10) / 10);
+            defaultLabel = `Dupla Chance: ${identifiedHome} ou ${identifiedAway} (12)`;
+            break;
+          default:
+            estimatedProb = probHome;
+            defaultLabel = marketLabel || market || 'Mercado Geral';
+            break;
+        }
+      }
+
+      // 3. Cálculos de Decisão Matemática
+      // Probabilidade Implícita da Casa: (1 / Odd) * 100
+      const impliedProbability = Math.round((1 / numOdd) * 10000) / 100;
+
+      // Probabilidade em decimal [0, 1]
+      const p = Math.max(0.01, Math.min(0.99, estimatedProb / 100));
+      const fairOdd = Math.round((1 / p) * 100) / 100;
+      const minimumProfitableOdd = fairOdd;
+
+      // Valor Esperado (EV): (Probabilidade_Modelo * (Odd - 1)) - (1 - Probabilidade_Modelo)
+      const expectedValue = Math.round(((p * (numOdd - 1)) - (1 - p)) * 10000) / 10000;
+      const expectedValuePercentage = Math.round(expectedValue * 10000) / 100;
+
+      // Vantagem matemática estimada (Edge): ((Odd / FairOdd) - 1) * 100
+      const edgePercentage = Math.round(((numOdd / fairOdd) - 1) * 10000) / 100;
+
+      const potentialReturn = Math.round(numStake * numOdd * 100) / 100;
+      const expectedProfit = Math.round(numStake * expectedValue * 100) / 100;
+
+      // 4. Veredicto e Explicação em Português Claro
+      const isPositiveEV = expectedValue > 0.0001;
+      const verdict = isPositiveEV ? 'POSITIVE_VALUE' : 'NEGATIVE_VALUE';
+      const verdictTitle = isPositiveEV 
+        ? '[VALOR POSITIVO / RECOMENDADO]' 
+        : '[VALOR NEGATIVO / RISCO ALTO]';
+
+      let explanation = '';
+      if (isPositiveEV) {
+        const edgeDisplay = edgePercentage > 0 ? edgePercentage.toFixed(1) : (expectedValuePercentage).toFixed(1);
+        explanation = `A sua odd (${numOdd.toFixed(2)}) está pagando mais do que a probabilidade real de ${estimatedProb.toFixed(1)}% calculada. Vantagem matemática estimada de +${edgeDisplay}%.`;
+      } else {
+        explanation = `A probabilidade estimada é de apenas ${estimatedProb.toFixed(1)}%. Para essa aposta compensar matematicamente, a casa deveria oferecer uma odd mínima de ${fairOdd.toFixed(2)}.`;
+      }
+
+      const result: BetValidationResult = {
+        matchQuery: queryTrim,
+        identifiedMatch: {
+          homeTeam: identifiedHome,
+          awayTeam: identifiedAway,
+          competition: identifiedComp,
+          matchDate: identifiedDate,
+          venue: identifiedVenue,
+          isExistingDbMatch: isExistingDb,
+          isLiveSearched,
+        },
+        market: {
+          key: upperMarket,
+          label: marketLabel || defaultLabel,
+        },
+        offeredOdd: numOdd,
+        stake: numStake,
+        impliedProbability,
+        estimatedProbability: Math.round(estimatedProb * 10) / 10,
+        estimatedProbabilityDecimal: Math.round(p * 1000) / 1000,
+        expectedValue,
+        expectedValuePercentage,
+        fairOdd,
+        minimumProfitableOdd,
+        edgePercentage,
+        potentialReturn,
+        expectedProfit,
+        isPositiveEV,
+        verdict,
+        verdictTitle,
+        explanation,
+        sources,
+        modelContext: {
+          probabilities1X2: { home: probHome, draw: probDraw, away: probAway },
+          expectedGoals: { home: xGHome, away: xGAway, total: Math.round((xGHome + xGAway) * 10) / 10 },
+          overUnder25: { over: over25Prob, under: under25Prob },
+          btts: { yes: bttsYesProb, no: bttsNoProb },
+          breakingNews,
+        },
+      };
+
+      res.setHeader('X-Match-Origin', isExistingDb ? 'LOCAL_DATABASE_ENSEMBLE' : 'GEMINI_GOOGLE_SEARCH_LIVE');
+      res.json(result);
+    } catch (err: any) {
+      console.error('Erro ao validar aposta personalizada:', err);
+      res.status(500).json({ 
+        error: 'Erro no processamento da aposta. Verifique se o confronto e a odd foram preenchidos corretamente.' 
+      });
     }
   });
 

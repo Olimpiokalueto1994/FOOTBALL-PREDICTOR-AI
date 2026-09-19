@@ -17,7 +17,8 @@ import {
   Flame,
   Globe,
   Newspaper,
-  Sliders
+  Sliders,
+  Calculator
 } from 'lucide-react';
 import { Language, translations } from '../i18n/translations';
 import { runPrediction, getMatchOdds } from '../services/api';
@@ -28,6 +29,7 @@ interface MatchDetailViewProps {
   language: Language;
   onOpenTransparencyModal: () => void;
   onUpdateMatchPrediction: (matchId: string, pred: PredictionResult) => void;
+  onValidateBet?: (match: Match) => void;
 }
 
 export const MatchDetailView: React.FC<MatchDetailViewProps> = ({
@@ -36,6 +38,7 @@ export const MatchDetailView: React.FC<MatchDetailViewProps> = ({
   language,
   onOpenTransparencyModal,
   onUpdateMatchPrediction,
+  onValidateBet,
 }) => {
   const t = translations[language];
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -126,6 +129,16 @@ export const MatchDetailView: React.FC<MatchDetailViewProps> = ({
         </button>
 
         <div className="flex items-center space-x-3">
+          {onValidateBet && (
+            <button
+              onClick={() => onValidateBet(match)}
+              className="flex items-center space-x-1.5 rounded-lg border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 px-3 py-1.5 text-xs font-mono font-semibold transition-colors shadow-xs"
+            >
+              <Calculator className="h-3.5 w-3.5" />
+              <span>Simular Aposta (EV+)</span>
+            </button>
+          )}
+
           <button
             onClick={onOpenTransparencyModal}
             className="flex items-center space-x-1.5 rounded-lg border border-slate-200 dark:border-[#1E2638] bg-white dark:bg-[#0E131F] px-3 py-1.5 text-xs font-mono text-slate-700 dark:text-[#8D98A8] hover:text-slate-900 dark:hover:text-[#F5F7FA] hover:bg-slate-50 dark:hover:bg-[#151C2C] transition-colors shadow-xs"

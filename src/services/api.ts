@@ -1,4 +1,12 @@
-import { Match, PredictionResult, BacktestSummary, LiveMatchAnalysisResult, DetailedMarketOdds } from '../types/football';
+import { 
+  Match, 
+  PredictionResult, 
+  BacktestSummary, 
+  LiveMatchAnalysisResult, 
+  DetailedMarketOdds,
+  BetValidationRequest,
+  BetValidationResult
+} from '../types/football';
 
 export async function getMatches(params?: {
   competition?: string;
@@ -89,6 +97,19 @@ export async function searchLiveMatch(query: string): Promise<LiveMatchAnalysisR
     body: JSON.stringify({ query }),
   });
   if (!res.ok) throw new Error('Falha ao processar pesquisa ao vivo');
+  return res.json();
+}
+
+export async function validateBet(payload: BetValidationRequest): Promise<BetValidationResult> {
+  const res = await fetch('/api/validate-bet', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || 'Falha ao validar aposta personalizada');
+  }
   return res.json();
 }
 
